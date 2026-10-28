@@ -98,7 +98,12 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     private var socketJob: Job? = null
     private var timeSyncJob: Job? = null
 
-    suspend fun getGroups(): List<GroupInfoDto> = api.syncPlayApi.syncPlayGetGroups().content
+    suspend fun getGroups(): List<GroupInfoDto> {
+        // Listen for group updates already, the server may still count us as a member of a group
+        // from before the app restarted or lost its connection
+        subscribe()
+        return api.syncPlayApi.syncPlayGetGroups().content
+    }
 
     fun createGroup() {
         launchRequest {
@@ -173,6 +178,12 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
         )
 
     private suspend fun connect() {
+        subscribe()
+        withTimeout(10_000) { api.webSocket.state.first { it is SocketApiState.Connected } }
+        startTimeSync()
+    }
+
+    private fun subscribe() {
         if (socketJob == null) {
             socketJob = scope.launch {
                 launch {
@@ -190,7 +201,9 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                 }
             }
         }
-        withTimeout(10_000) { api.webSocket.state.first { it is SocketApiState.Connected } }
+    }
+
+    private suspend fun startTimeSync() {
         syncTime()
         if (timeSyncJob == null) {
             timeSyncJob = scope.launch {
@@ -235,6 +248,11 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
 
     private fun onGroupUpdate(update: GroupUpdate) {
         Timber.tag(TAG).d("Group update: $update")
+        if (groupId == null && isMemberUpdate(update)) {
+            // The server still counts us as a member, e.g. after the app restarted
+            restoreGroup(update.groupId)
+            if (update !is SyncPlayPlayQueueUpdate) return
+        }
         when (update) {
             is SyncPlayGroupJoinedUpdate -> {
                 groupId = update.groupId
@@ -273,6 +291,31 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                 leaveGroup()
             }
             else -> Unit
+        }
+    }
+
+    private fun isMemberUpdate(update: GroupUpdate): Boolean =
+        when (update) {
+            is SyncPlayUserJoinedUpdate,
+            is SyncPlayUserLeftUpdate,
+            is SyncPlayStateUpdate,
+            is SyncPlayPlayQueueUpdate -> true
+            else -> false
+        }
+
+    private fun restoreGroup(id: UUID) {
+        groupId = id
+        launchRequest {
+            val group = api.syncPlayApi.syncPlayGetGroup(id).content
+            if (groupId != id) return@launchRequest
+            _state.value =
+                SyncPlayState(
+                    groupName = group.groupName,
+                    participants = group.participants,
+                    groupState = group.state,
+                )
+            showMessage(R.string.syncplay_joined_group, group.groupName)
+            startTimeSync()
         }
     }
 

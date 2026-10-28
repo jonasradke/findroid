@@ -131,12 +131,11 @@ fun SyncPlayDialog(
                         SyncPlayRow(
                             icon = CoreR.drawable.ic_users,
                             title = group.groupName,
+                            // The server lists each user once, even with several devices
                             subtitle =
-                                pluralStringResource(
-                                    PlayerLocalR.plurals.syncplay_participants,
-                                    group.participants.size,
-                                    group.participants.size,
-                                ) + " · " + stringResource(group.state.labelRes()),
+                                group.participants.joinToString() +
+                                    " · " +
+                                    stringResource(group.state.labelRes()),
                             onClick = { onJoin(group) },
                         )
                     }
