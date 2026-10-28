@@ -1,0 +1,355 @@
+package dev.jdtech.jellyfin.player.local.domain
+
+import android.app.Application
+import android.widget.Toast
+import androidx.annotation.StringRes
+import dev.jdtech.jellyfin.api.JellyfinApi
+import dev.jdtech.jellyfin.player.local.R
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import org.jellyfin.sdk.api.client.extensions.syncPlayApi
+import org.jellyfin.sdk.api.sockets.SocketApiState
+import org.jellyfin.sdk.api.sockets.subscribe
+import org.jellyfin.sdk.model.api.BufferRequestDto
+import org.jellyfin.sdk.model.api.GroupInfoDto
+import org.jellyfin.sdk.model.api.GroupStateType
+import org.jellyfin.sdk.model.api.GroupUpdate
+import org.jellyfin.sdk.model.api.JoinGroupRequestDto
+import org.jellyfin.sdk.model.api.NewGroupRequestDto
+import org.jellyfin.sdk.model.api.PingRequestDto
+import org.jellyfin.sdk.model.api.PlayQueueUpdate
+import org.jellyfin.sdk.model.api.PlayRequestDto
+import org.jellyfin.sdk.model.api.ReadyRequestDto
+import org.jellyfin.sdk.model.api.SeekRequestDto
+import org.jellyfin.sdk.model.api.SendCommand
+import org.jellyfin.sdk.model.api.SyncPlayCommandMessage
+import org.jellyfin.sdk.model.api.SyncPlayGroupDoesNotExistUpdate
+import org.jellyfin.sdk.model.api.SyncPlayGroupJoinedUpdate
+import org.jellyfin.sdk.model.api.SyncPlayGroupLeftUpdate
+import org.jellyfin.sdk.model.api.SyncPlayGroupUpdateMessage
+import org.jellyfin.sdk.model.api.SyncPlayLibraryAccessDeniedUpdate
+import org.jellyfin.sdk.model.api.SyncPlayNotInGroupUpdate
+import org.jellyfin.sdk.model.api.SyncPlayPlayQueueUpdate
+import org.jellyfin.sdk.model.api.SyncPlayStateUpdate
+import org.jellyfin.sdk.model.api.SyncPlayUserJoinedUpdate
+import org.jellyfin.sdk.model.api.SyncPlayUserLeftUpdate
+import timber.log.Timber
+
+/**
+ * App-wide SyncPlay session. Keeps the group membership, the WebSocket subscription and the clock
+ * offset to the server, independent of the player, so groups can be created and joined from
+ * anywhere and the app stays in the group while browsing.
+ *
+ * The player attaches a [SyncPlayController] that applies the group's [commands] and reports back.
+ * When the group starts a title that is not playing here, [pendingOpen] asks the app to open it.
+ */
+@Singleton
+class SyncPlayManager
+@Inject
+constructor(private val application: Application, private val jellyfinApi: JellyfinApi) {
+    private val api = jellyfinApi.api
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private val _state = MutableStateFlow<SyncPlayState?>(null)
+    /** The group we are in, or null when not in a group. */
+    val state = _state.asStateFlow()
+
+    private val _queue = MutableStateFlow<QueueItem?>(null)
+    /** What the group is watching, or null when nothing is queued. */
+    val queue = _queue.asStateFlow()
+
+    private val _commands = MutableSharedFlow<SendCommand>(extraBufferCapacity = 16)
+    /** Playback commands from the group, applied by the attached player. */
+    val commands = _commands.asSharedFlow()
+
+    private val _pendingOpen = MutableStateFlow<QueueItem?>(null)
+    /** A title the group started that is not open in the player yet. */
+    val pendingOpen = _pendingOpen.asStateFlow()
+
+    /** The item open in the player, set by the attached [SyncPlayController]. */
+    var playerItemId: UUID? = null
+
+    var groupId: UUID? = null
+        private set
+
+    // Server time minus local time, measured like NTP. Samples with the lowest ping are the most
+    // accurate.
+    private var timeOffsetMs = 0L
+    private val timeSamples = ArrayDeque<TimeSample>()
+
+    private var socketJob: Job? = null
+    private var timeSyncJob: Job? = null
+
+    suspend fun getGroups(): List<GroupInfoDto> = api.syncPlayApi.syncPlayGetGroups().content
+
+    fun createGroup() {
+        launchRequest {
+            connect()
+            val userName = jellyfinApi.userApi.getCurrentUser().content.name.orEmpty()
+            val groupName = application.getString(R.string.syncplay_group_name, userName)
+            api.syncPlayApi.syncPlayCreateGroup(NewGroupRequestDto(groupName))
+        }
+    }
+
+    fun joinGroup(groupId: UUID) {
+        launchRequest {
+            connect()
+            api.syncPlayApi.syncPlayJoinGroup(JoinGroupRequestDto(groupId))
+        }
+    }
+
+    fun leaveGroup() {
+        if (groupId == null) return
+        launchRequest { api.syncPlayApi.syncPlayLeaveGroup() }
+        reset()
+        showMessage(R.string.syncplay_left_group)
+    }
+
+    /** Makes [itemId] the group's title, starting at [positionTicks]. */
+    fun setQueue(itemId: UUID, positionTicks: Long) {
+        launchRequest {
+            api.syncPlayApi.syncPlaySetNewQueue(
+                PlayRequestDto(
+                    playingQueue = listOf(itemId),
+                    playingItemPosition = 0,
+                    startPositionTicks = positionTicks,
+                )
+            )
+        }
+    }
+
+    fun requestUnpause() {
+        launchRequest { api.syncPlayApi.syncPlayUnpause() }
+    }
+
+    fun requestPause() {
+        launchRequest { api.syncPlayApi.syncPlayPause() }
+    }
+
+    fun requestSeek(positionTicks: Long) {
+        launchRequest { api.syncPlayApi.syncPlaySeek(SeekRequestDto(positionTicks)) }
+    }
+
+    fun sendReady(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
+        val request = ReadyRequestDto(serverNow(), positionTicks, isPlaying, playlistItemId)
+        launchRequest { api.syncPlayApi.syncPlayReady(request) }
+    }
+
+    fun sendBuffering(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
+        val request = BufferRequestDto(serverNow(), positionTicks, isPlaying, playlistItemId)
+        launchRequest { api.syncPlayApi.syncPlayBuffering(request) }
+    }
+
+    fun consumePendingOpen() {
+        _pendingOpen.value = null
+    }
+
+    /** Converts a server time to local epoch milliseconds. */
+    fun toLocalMillis(serverTime: LocalDateTime): Long =
+        serverTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() - timeOffsetMs
+
+    private fun serverNow(): LocalDateTime =
+        LocalDateTime.ofInstant(
+            Instant.ofEpochMilli(System.currentTimeMillis() + timeOffsetMs),
+            ZoneId.systemDefault(),
+        )
+
+    private suspend fun connect() {
+        if (socketJob == null) {
+            socketJob = scope.launch {
+                launch {
+                    api.webSocket.subscribe<SyncPlayGroupUpdateMessage>().collect {
+                        onGroupUpdate(it.data)
+                    }
+                }
+                launch {
+                    api.webSocket.subscribe<SyncPlayCommandMessage>().collect { message ->
+                        message.data?.let { command ->
+                            Timber.tag(TAG).d("Command: $command")
+                            if (command.groupId == groupId) _commands.emit(command)
+                        }
+                    }
+                }
+            }
+        }
+        withTimeout(10_000) { api.webSocket.state.first { it is SocketApiState.Connected } }
+        syncTime()
+        if (timeSyncJob == null) {
+            timeSyncJob = scope.launch {
+                repeat(7) {
+                    delay(1_000)
+                    syncTime()
+                }
+                while (true) {
+                    delay(60_000)
+                    syncTime()
+                }
+            }
+        }
+    }
+
+    private suspend fun syncTime() {
+        try {
+            val sendTime = System.currentTimeMillis()
+            val response = jellyfinApi.systemApi.getUtcTime().content
+            val receiveTime = System.currentTimeMillis()
+            val serverReceiveTime = response.requestReceptionTime.toEpochMilli()
+            val serverSendTime = response.responseTransmissionTime.toEpochMilli()
+            timeSamples.addLast(
+                TimeSample(
+                    offset = ((serverReceiveTime - sendTime) + (serverSendTime - receiveTime)) / 2,
+                    ping = (receiveTime - sendTime) - (serverSendTime - serverReceiveTime),
+                )
+            )
+            if (timeSamples.size > 8) timeSamples.removeFirst()
+            val best = timeSamples.minBy { it.ping }
+            timeOffsetMs = best.offset
+            // The server only accepts pings from group members
+            if (groupId != null) {
+                api.syncPlayApi.syncPlayPing(PingRequestDto(best.ping.coerceAtLeast(0)))
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e)
+        }
+    }
+
+    private fun onGroupUpdate(update: GroupUpdate) {
+        Timber.tag(TAG).d("Group update: $update")
+        when (update) {
+            is SyncPlayGroupJoinedUpdate -> {
+                groupId = update.groupId
+                _state.value =
+                    SyncPlayState(
+                        groupName = update.data.groupName,
+                        participants = update.data.participants,
+                        groupState = update.data.state,
+                    )
+                showMessage(R.string.syncplay_joined_group, update.data.groupName)
+            }
+            is SyncPlayUserJoinedUpdate -> {
+                _state.update { it?.copy(participants = it.participants + update.data) }
+                showMessage(R.string.syncplay_user_joined, update.data)
+            }
+            is SyncPlayUserLeftUpdate -> {
+                _state.update { it?.copy(participants = it.participants - update.data) }
+                showMessage(R.string.syncplay_user_left, update.data)
+            }
+            is SyncPlayStateUpdate -> {
+                val groupState = update.data.state
+                _state.update { it?.copy(groupState = groupState) }
+            }
+            is SyncPlayPlayQueueUpdate -> onPlayQueueUpdate(update.data)
+            is SyncPlayGroupLeftUpdate,
+            is SyncPlayNotInGroupUpdate -> {
+                if (groupId != null) showMessage(R.string.syncplay_left_group)
+                reset()
+            }
+            is SyncPlayGroupDoesNotExistUpdate -> {
+                showMessage(R.string.syncplay_group_does_not_exist)
+                reset()
+            }
+            is SyncPlayLibraryAccessDeniedUpdate -> {
+                showMessage(R.string.syncplay_library_access_denied)
+                leaveGroup()
+            }
+            else -> Unit
+        }
+    }
+
+    private fun onPlayQueueUpdate(update: PlayQueueUpdate) {
+        val queueItem = update.playlist.getOrNull(update.playingItemIndex)
+        if (queueItem == null) {
+            _queue.value = null
+            return
+        }
+        val item =
+            QueueItem(
+                itemId = queueItem.itemId,
+                playlistItemId = queueItem.playlistItemId,
+                startPositionTicks = update.startPositionTicks,
+                isPlaying = update.isPlaying,
+                lastUpdateMillis = toLocalMillis(update.lastUpdate),
+            )
+        val isNewTitle = item.playlistItemId != _queue.value?.playlistItemId
+        _queue.value = item
+        // The group started a title that is not open here, ask the app to open it
+        if (isNewTitle && item.itemId != playerItemId) _pendingOpen.value = item
+    }
+
+    private fun reset() {
+        groupId = null
+        _state.value = null
+        _queue.value = null
+        _pendingOpen.value = null
+        timeSyncJob?.cancel()
+        timeSyncJob = null
+        socketJob?.cancel()
+        socketJob = null
+    }
+
+    private fun launchRequest(block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e)
+                showMessage(R.string.syncplay_request_failed)
+            }
+        }
+    }
+
+    private fun showMessage(@StringRes resId: Int, vararg formatArgs: Any) {
+        val message = application.getString(resId, *formatArgs)
+        Toast.makeText(application, message, Toast.LENGTH_SHORT).show()
+    }
+
+    // The SDK converts server times to the device's time zone
+    private fun LocalDateTime.toEpochMilli(): Long =
+        atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    data class SyncPlayState(
+        val groupName: String,
+        val participants: List<String>,
+        val groupState: GroupStateType,
+    ) {
+        val isWaiting: Boolean
+            get() = groupState == GroupStateType.WAITING
+    }
+
+    /** The title a group is watching and where it was at [lastUpdateMillis] (local time). */
+    data class QueueItem(
+        val itemId: UUID,
+        val playlistItemId: UUID,
+        val startPositionTicks: Long,
+        val isPlaying: Boolean,
+        val lastUpdateMillis: Long,
+    )
+
+    private data class TimeSample(val offset: Long, val ping: Long)
+
+    companion object {
+        const val TAG = "SyncPlay"
+    }
+}

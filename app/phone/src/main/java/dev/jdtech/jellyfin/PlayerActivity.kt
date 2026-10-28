@@ -376,7 +376,7 @@ class PlayerActivity : BasePlayerActivity() {
             )
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.syncPlay.state.collect { state ->
+                viewModel.syncPlayManager.state.collect { state ->
                     syncPlayButton.imageTintList =
                         if (state != null) syncPlayActiveTint else syncPlayInactiveTint
                     binding.syncplayWaitingLayout.isVisible = state?.isWaiting == true
@@ -404,7 +404,6 @@ class PlayerActivity : BasePlayerActivity() {
             itemKind = itemKind ?: "",
             mediaSourceId = mediaSourceId,
             startFromBeginning = startFromBeginning,
-            syncPlayGroupId = intent.extras!!.getString("syncPlayGroupId")?.let(UUID::fromString),
             syncPlayCreateGroup = intent.extras!!.getBoolean("syncPlayCreateGroup"),
         )
         hideSystemUI()
@@ -418,7 +417,7 @@ class PlayerActivity : BasePlayerActivity() {
     @Composable
     private fun SyncPlayDialogHost() {
         if (!showSyncPlayDialog) return
-        val state by viewModel.syncPlay.state.collectAsStateWithLifecycle()
+        val state by viewModel.syncPlayManager.state.collectAsStateWithLifecycle()
         var isJoining by remember { mutableStateOf(false) }
 
         // Keep the list of groups fresh while the dialog is open. The last list is kept between
@@ -426,7 +425,7 @@ class PlayerActivity : BasePlayerActivity() {
         LaunchedEffect(state == null) {
             while (state == null) {
                 try {
-                    syncPlayGroups = viewModel.syncPlay.getGroups()
+                    syncPlayGroups = viewModel.syncPlayManager.getGroups()
                 } catch (e: Exception) {
                     Timber.e(e)
                 }
@@ -446,9 +445,9 @@ class PlayerActivity : BasePlayerActivity() {
             groups = syncPlayGroups,
             onJoin = { group ->
                 isJoining = true
-                viewModel.syncPlay.joinGroup(group.groupId)
+                viewModel.syncPlayManager.joinGroup(group.groupId)
             },
-            onLeave = { viewModel.syncPlay.leaveGroup() },
+            onLeave = { viewModel.syncPlayManager.leaveGroup() },
             onDismiss = {
                 showSyncPlayDialog = false
                 hideSystemUI()
@@ -456,7 +455,7 @@ class PlayerActivity : BasePlayerActivity() {
             isBusy = isJoining,
             onCreate = {
                 isJoining = true
-                viewModel.syncPlay.createGroup()
+                viewModel.syncPlayManager.createGroup()
             },
         )
     }

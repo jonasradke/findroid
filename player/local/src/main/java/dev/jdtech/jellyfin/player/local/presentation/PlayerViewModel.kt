@@ -18,7 +18,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dev.jdtech.jellyfin.api.JellyfinApi
 import dev.jdtech.jellyfin.models.FindroidSegment
 import dev.jdtech.jellyfin.models.FindroidSegmentType
 import dev.jdtech.jellyfin.player.core.domain.models.PlayerChapter
@@ -28,6 +27,7 @@ import dev.jdtech.jellyfin.player.local.R
 import dev.jdtech.jellyfin.player.local.domain.DolbyVisionFallbackExtractorsFactory
 import dev.jdtech.jellyfin.player.local.domain.PlaylistManager
 import dev.jdtech.jellyfin.player.local.domain.SyncPlayController
+import dev.jdtech.jellyfin.player.local.domain.SyncPlayManager
 import dev.jdtech.jellyfin.player.local.mpv.MPVPlayer
 import dev.jdtech.jellyfin.repository.JellyfinRepository
 import dev.jdtech.jellyfin.settings.domain.AppPreferences
@@ -58,11 +58,11 @@ constructor(
     private val repository: JellyfinRepository,
     private val appPreferences: AppPreferences,
     private val savedStateHandle: SavedStateHandle,
-    jellyfinApi: JellyfinApi,
+    val syncPlayManager: SyncPlayManager,
 ) : ViewModel(), Player.Listener {
     val player: Player
 
-    val syncPlay: SyncPlayController
+    private var syncPlay: SyncPlayController? = null
 
     private val _uiState =
         MutableStateFlow(
@@ -185,8 +185,6 @@ constructor(
 
                 else -> throw RuntimeException("$playerBackend is not a valid player backend")
             }
-
-        syncPlay = SyncPlayController(application, jellyfinApi, player, viewModelScope)
     }
 
     fun initializePlayer(
@@ -194,7 +192,6 @@ constructor(
         itemKind: String,
         mediaSourceId: String? = null,
         startFromBeginning: Boolean,
-        syncPlayGroupId: UUID? = null,
         syncPlayCreateGroup: Boolean = false,
     ) {
         player.addListener(this)
@@ -242,10 +239,14 @@ constructor(
             player.prepare()
             player.play()
 
-            // Opened from a SyncPlay group, join it now that the group's item is loaded
-            syncPlayGroupId?.let { syncPlay.joinGroup(it) }
+            // Follow the SyncPlay group, now that the item is loaded
+            syncPlay?.release()
+            syncPlay =
+                SyncPlayController(syncPlayManager, player, viewModelScope) {
+                    viewModelScope.launch { eventsChannel.send(PlayerEvents.NavigateBack) }
+                }
             // Opened with "Watch together", start a group for this item
-            if (syncPlayCreateGroup) syncPlay.createGroup()
+            if (syncPlayCreateGroup) syncPlayManager.createGroup()
         }
     }
 
@@ -275,7 +276,8 @@ constructor(
 
     @OptIn(DelicateCoroutinesApi::class)
     private fun releasePlayer() {
-        syncPlay.release()
+        syncPlay?.release()
+        syncPlay = null
         val mediaId = player.currentMediaItem?.mediaId
         val position = player.currentPosition
         val duration = player.duration

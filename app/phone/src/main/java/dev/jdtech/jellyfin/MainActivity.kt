@@ -9,6 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import dev.jdtech.jellyfin.presentation.film.SyncPlayFollower
 import dev.jdtech.jellyfin.presentation.theme.FindroidTheme
 import dev.jdtech.jellyfin.presentation.utils.LocalOfflineMode
 import dev.jdtech.jellyfin.viewmodels.MainViewModel
@@ -33,6 +34,7 @@ class MainActivity : AppCompatActivity() {
                             hasCurrentServer = state.hasCurrentServer,
                             hasCurrentUser = state.hasCurrentUser,
                         )
+                        SyncPlayFollower()
                     }
                 }
             }

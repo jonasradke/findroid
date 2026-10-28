@@ -46,6 +46,7 @@ fun HomeHeader(
     onUserClick: () -> Unit,
     modifier: Modifier = Modifier,
     onSyncPlayClick: (() -> Unit)? = null,
+    isSyncPlayActive: Boolean = false,
 ) {
     val isOfflineMode = LocalOfflineMode.current
 
@@ -133,7 +134,9 @@ fun HomeHeader(
                     onClick = onSyncPlayClick,
                     modifier = Modifier.fillMaxHeight().aspectRatio(1f),
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color =
+                        if (isSyncPlayActive) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     Box {
                         Icon(
