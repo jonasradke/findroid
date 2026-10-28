@@ -65,6 +65,7 @@ fun SeasonScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(true) { viewModel.loadSeason(seasonId = seasonId) }
+    ThemeSong(itemId = seasonId)
 
     SeasonScreenLayout(
         state = state,

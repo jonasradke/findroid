@@ -78,6 +78,7 @@ fun MovieScreen(
     val downloaderState by downloaderViewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(true) { viewModel.loadMovie(movieId = movieId) }
+    ThemeSong(itemId = movieId)
 
     LaunchedEffect(state.movie) { state.movie?.let { movie -> downloaderViewModel.update(movie) } }
 

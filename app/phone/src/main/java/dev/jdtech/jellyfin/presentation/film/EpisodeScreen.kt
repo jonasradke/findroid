@@ -80,6 +80,7 @@ fun EpisodeScreen(
     val downloaderState by downloaderViewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(true) { viewModel.loadEpisode(episodeId = episodeId) }
+    ThemeSong(itemId = episodeId)
 
     LaunchedEffect(state.episode) {
         state.episode?.let { episode -> downloaderViewModel.update(episode) }

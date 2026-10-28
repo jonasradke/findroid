@@ -196,7 +196,13 @@ class SettingsViewModel @Inject constructor(private val appPreferences: AppPrefe
                                                         R.string.extra_info_summary,
                                                     backendPreference =
                                                         appPreferences.displayExtraInfo,
-                                                )
+                                                ),
+                                                PreferenceSwitch(
+                                                    nameStringResource = R.string.theme_songs,
+                                                    descriptionStringRes =
+                                                        R.string.theme_songs_summary,
+                                                    backendPreference = appPreferences.themeSongs,
+                                                ),
                                             )
                                     ),
                                 ),

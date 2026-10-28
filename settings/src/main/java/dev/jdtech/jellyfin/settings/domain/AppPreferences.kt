@@ -24,6 +24,7 @@ class AppPreferences @Inject constructor(val sharedPreferences: SharedPreference
     val homeNextUp = Preference<Boolean>("home_next_up", true)
     val homeLatest = Preference<Boolean>("home_latest", true)
     val displayExtraInfo = Preference("pref_display_extra_info", false)
+    val themeSongs = Preference("pref_theme_songs", true)
 
     // Player
     val playerBackend = Preference("pref_player_backend", "exoplayer")

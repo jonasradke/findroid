@@ -25,10 +25,12 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.jellyfin.sdk.api.client.HttpMethod
 import org.jellyfin.sdk.api.client.extensions.syncPlayApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemKind
-import org.jellyfin.sdk.model.api.BufferRequestDto
 import org.jellyfin.sdk.model.api.GroupInfoDto
 import org.jellyfin.sdk.model.api.GroupStateType
 import org.jellyfin.sdk.model.api.GroupUpdate
@@ -37,7 +39,6 @@ import org.jellyfin.sdk.model.api.NewGroupRequestDto
 import org.jellyfin.sdk.model.api.PingRequestDto
 import org.jellyfin.sdk.model.api.PlayQueueUpdate
 import org.jellyfin.sdk.model.api.PlayRequestDto
-import org.jellyfin.sdk.model.api.ReadyRequestDto
 import org.jellyfin.sdk.model.api.SeekRequestDto
 import org.jellyfin.sdk.model.api.SendCommand
 import org.jellyfin.sdk.model.api.SyncPlayCommandMessage
@@ -163,13 +164,31 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     }
 
     fun sendReady(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
-        val request = ReadyRequestDto(serverNow(), positionTicks, isPlaying, playlistItemId)
-        launchRequest { api.syncPlayApi.syncPlayReady(request) }
+        sendPlaybackReport("/SyncPlay/Ready", positionTicks, isPlaying, playlistItemId)
     }
 
     fun sendBuffering(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
-        val request = BufferRequestDto(serverNow(), positionTicks, isPlaying, playlistItemId)
-        launchRequest { api.syncPlayApi.syncPlayBuffering(request) }
+        sendPlaybackReport("/SyncPlay/Buffering", positionTicks, isPlaying, playlistItemId)
+    }
+
+    /**
+     * Reports where we are at the current server time. The SDK writes times with the device's UTC
+     * offset, which the server then compares to its UTC clock as if it were UTC when it runs in a
+     * time zone other than UTC, so the time is sent in UTC like the web client does.
+     */
+    private fun sendPlaybackReport(
+        path: String,
+        positionTicks: Long,
+        isPlaying: Boolean,
+        playlistItemId: UUID,
+    ) {
+        val body = buildJsonObject {
+            put("When", Instant.ofEpochMilli(System.currentTimeMillis() + timeOffsetMs).toString())
+            put("PositionTicks", positionTicks)
+            put("IsPlaying", isPlaying)
+            put("PlaylistItemId", playlistItemId.toString())
+        }
+        launchRequest { api.request(HttpMethod.POST, path, requestBody = body) }
     }
 
     /**
@@ -194,12 +213,6 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     /** Converts a server time to local epoch milliseconds. */
     fun toLocalMillis(serverTime: LocalDateTime): Long =
         serverTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() - timeOffsetMs
-
-    private fun serverNow(): LocalDateTime =
-        LocalDateTime.ofInstant(
-            Instant.ofEpochMilli(System.currentTimeMillis() + timeOffsetMs),
-            ZoneId.systemDefault(),
-        )
 
     private suspend fun connect() {
         subscribe()

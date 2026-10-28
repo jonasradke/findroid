@@ -78,6 +78,7 @@ fun ShowScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(true) { viewModel.loadShow(showId = showId) }
+    ThemeSong(itemId = showId)
 
     ShowScreenLayout(
         state = state,
