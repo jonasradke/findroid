@@ -25,6 +25,7 @@ import dev.jdtech.jellyfin.player.core.domain.models.PlayerItem
 import dev.jdtech.jellyfin.player.core.domain.models.Trickplay
 import dev.jdtech.jellyfin.player.local.R
 import dev.jdtech.jellyfin.player.local.domain.DolbyVisionFallbackExtractorsFactory
+import dev.jdtech.jellyfin.player.local.domain.PlaybackStatsListener
 import dev.jdtech.jellyfin.player.local.domain.PlaylistManager
 import dev.jdtech.jellyfin.player.local.domain.SyncPlayController
 import dev.jdtech.jellyfin.player.local.domain.SyncPlayManager
@@ -63,6 +64,9 @@ constructor(
     val player: Player
 
     private var syncPlay: SyncPlayController? = null
+
+    /** Details for the playback info screen, collected while ExoPlayer plays. */
+    val playbackStats = PlaybackStatsListener()
 
     private val _uiState =
         MutableStateFlow(
@@ -185,6 +189,7 @@ constructor(
 
                 else -> throw RuntimeException("$playerBackend is not a valid player backend")
             }
+        (player as? ExoPlayer)?.addAnalyticsListener(playbackStats)
     }
 
     fun initializePlayer(
@@ -249,6 +254,9 @@ constructor(
             if (syncPlayCreateGroup) syncPlayManager.createGroup()
         }
     }
+
+    /** How far ahead (positive) or behind the SyncPlay group we are, null when not following. */
+    fun syncPlayOffsetMs(): Long? = syncPlay?.offsetFromGroupMs()
 
     private fun PlayerItem.toMediaItem(): MediaItem {
         val streamUrl = mediaSourceUri

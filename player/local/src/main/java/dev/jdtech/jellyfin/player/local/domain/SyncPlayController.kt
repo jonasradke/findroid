@@ -178,6 +178,14 @@ class SyncPlayController(
         }
     }
 
+    /** How far ahead (positive) or behind the group we are, while the group plays. */
+    fun offsetFromGroupMs(): Long? {
+        if (!isFollowingGroup || manager.state.value?.groupState != GroupStateType.PLAYING) {
+            return null
+        }
+        return groupPositionMs()?.let { player.currentPosition - it }
+    }
+
     /** Where the group is now, when it is playing and we know since when. */
     private fun groupPositionMs(): Long? {
         val last = lastCommand ?: return null

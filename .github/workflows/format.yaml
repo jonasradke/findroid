@@ -31,3 +31,12 @@ jobs:
       - name: Show formatting diff
         if: failure()
         run: ./gradlew ktfmtFormat && git diff
+      - name: Save formatting patch
+        if: failure()
+        run: git diff > ktfmt.patch
+      - name: Upload formatting patch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktfmt-patch
+          path: ktfmt.patch

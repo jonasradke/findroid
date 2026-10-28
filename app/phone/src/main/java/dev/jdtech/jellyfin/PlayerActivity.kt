@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import android.util.Rational
+import android.view.Gravity
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
@@ -53,6 +54,7 @@ import dev.jdtech.jellyfin.databinding.ActivityPlayerBinding
 import dev.jdtech.jellyfin.player.local.presentation.PlayerEvents
 import dev.jdtech.jellyfin.player.local.presentation.PlayerViewModel
 import dev.jdtech.jellyfin.presentation.components.SyncPlayDialog
+import dev.jdtech.jellyfin.presentation.player.PlaybackInfoOverlay
 import dev.jdtech.jellyfin.presentation.player.SpeedSelectionDialogFragment
 import dev.jdtech.jellyfin.presentation.player.TrackSelectionDialogFragment
 import dev.jdtech.jellyfin.presentation.theme.FindroidTheme
@@ -77,6 +79,7 @@ class PlayerActivity : BasePlayerActivity() {
     private var playerGestureHelper: PlayerGestureHelper? = null
 
     private var showSyncPlayDialog by mutableStateOf(false)
+    private var showPlaybackInfo by mutableStateOf(false)
     private var syncPlayGroups by mutableStateOf<List<GroupInfoDto>?>(null)
 
     private val hdrListener =
@@ -145,6 +148,20 @@ class PlayerActivity : BasePlayerActivity() {
         addContentView(
             ComposeView(this).apply { setContent { FindroidTheme { SyncPlayDialogHost() } } },
             ViewGroup.LayoutParams(0, 0),
+        )
+        // Only as big as the panel, so touches elsewhere still reach the player
+        addContentView(
+            ComposeView(this).apply { setContent { FindroidTheme { PlaybackInfoHost() } } },
+            FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.TOP or Gravity.START,
+                )
+                .apply {
+                    // Below the top bar with the back button
+                    val density = resources.displayMetrics.density
+                    setMargins((24 * density).toInt(), (80 * density).toInt(), 0, 0)
+                },
         )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
@@ -385,6 +402,9 @@ class PlayerActivity : BasePlayerActivity() {
         }
 
         syncPlayButton.setOnClickListener { showSyncPlayDialog = true }
+        binding.playerView.findViewById<ImageButton>(R.id.btn_playback_info).setOnClickListener {
+            showPlaybackInfo = !showPlaybackInfo
+        }
 
         pipButton.setOnClickListener { pictureInPicture() }
 
@@ -412,6 +432,19 @@ class PlayerActivity : BasePlayerActivity() {
     override fun onDestroy() {
         viewModel.player.removeListener(hdrListener)
         super.onDestroy()
+    }
+
+    @Composable
+    private fun PlaybackInfoHost() {
+        if (!showPlaybackInfo) return
+        val syncPlayState by viewModel.syncPlayManager.state.collectAsStateWithLifecycle()
+        PlaybackInfoOverlay(
+            player = viewModel.player,
+            stats = viewModel.playbackStats,
+            syncPlayOffsetMs = viewModel::syncPlayOffsetMs,
+            isInSyncPlayGroup = syncPlayState != null,
+            onClose = { showPlaybackInfo = false },
+        )
     }
 
     @Composable
