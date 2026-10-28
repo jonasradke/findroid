@@ -15,6 +15,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.jdtech.jellyfin.models.FindroidSegment
@@ -23,6 +24,7 @@ import dev.jdtech.jellyfin.player.core.domain.models.PlayerChapter
 import dev.jdtech.jellyfin.player.core.domain.models.PlayerItem
 import dev.jdtech.jellyfin.player.core.domain.models.Trickplay
 import dev.jdtech.jellyfin.player.local.R
+import dev.jdtech.jellyfin.player.local.domain.DolbyVisionFallbackExtractorsFactory
 import dev.jdtech.jellyfin.player.local.domain.PlaylistManager
 import dev.jdtech.jellyfin.player.local.mpv.MPVPlayer
 import dev.jdtech.jellyfin.repository.JellyfinRepository
@@ -142,6 +144,12 @@ constructor(
                                 DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
                             )
                     ExoPlayer.Builder(application, renderersFactory)
+                        .setMediaSourceFactory(
+                            DefaultMediaSourceFactory(
+                                application,
+                                DolbyVisionFallbackExtractorsFactory(),
+                            )
+                        )
                         .setAudioAttributes(audioAttributes, true)
                         .setTrackSelector(trackSelector)
                         .setSeekBackIncrementMs(
