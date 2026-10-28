@@ -95,7 +95,8 @@ class SyncPlayController(
                         Timber.tag(SyncPlayManager.TAG).d("Group moved to ${queue.itemId}, closing")
                         onGroupChangedTitle()
                     } else {
-                        Timber.tag(SyncPlayManager.TAG).d("Group moved to ${queue.itemId}, ignoring")
+                        Timber.tag(SyncPlayManager.TAG)
+                            .d("Group moved to ${queue.itemId}, ignoring")
                     }
                 }
             }
