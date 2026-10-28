@@ -26,8 +26,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.jellyfin.sdk.api.client.extensions.syncPlayApi
-import org.jellyfin.sdk.api.sockets.SocketApiState
-import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BufferRequestDto
 import org.jellyfin.sdk.model.api.GroupInfoDto
 import org.jellyfin.sdk.model.api.GroupStateType
@@ -67,6 +65,7 @@ class SyncPlayManager
 constructor(private val application: Application, private val jellyfinApi: JellyfinApi) {
     private val api = jellyfinApi.api
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val socket = SyncPlaySocket(api)
 
     private val _state = MutableStateFlow<SyncPlayState?>(null)
     /** The group we are in, or null when not in a group. */
@@ -83,6 +82,10 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     private val _pendingOpen = MutableStateFlow<QueueItem?>(null)
     /** A title the group started that is not open in the player yet. */
     val pendingOpen = _pendingOpen.asStateFlow()
+
+    private val _userImages = MutableStateFlow<Map<String, String>>(emptyMap())
+    /** Profile picture URLs by user name, for the users we could look up. */
+    val userImages = _userImages.asStateFlow()
 
     /** The item open in the player, set by the attached [SyncPlayController]. */
     var playerItemId: UUID? = null
@@ -183,25 +186,23 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
 
     private suspend fun connect() {
         subscribe()
-        withTimeout(10_000) { api.webSocket.state.first { it is SocketApiState.Connected } }
+        withTimeout(10_000) { socket.isConnected.first { it } }
         startTimeSync()
     }
 
     private fun subscribe() {
         if (socketJob == null) {
             socketJob = scope.launch {
-                launch {
-                    api.webSocket.subscribe<SyncPlayGroupUpdateMessage>().collect {
-                        onGroupUpdate(it.data)
-                    }
-                }
-                launch {
-                    api.webSocket.subscribe<SyncPlayCommandMessage>().collect { message ->
-                        message.data?.let { command ->
-                            Timber.tag(TAG).d("Command: $command")
-                            if (groupId == null) restoreGroup(command.groupId)
-                            if (command.groupId == groupId) _commands.emit(command)
-                        }
+                socket.messages().collect { message ->
+                    when (message) {
+                        is SyncPlayGroupUpdateMessage -> onGroupUpdate(message.data)
+                        is SyncPlayCommandMessage ->
+                            message.data?.let { command ->
+                                Timber.tag(TAG).d("Command: $command")
+                                if (groupId == null) restoreGroup(command.groupId)
+                                if (command.groupId == groupId) _commands.emit(command)
+                            }
+                        else -> Unit
                     }
                 }
             }
@@ -251,6 +252,39 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
         }
     }
 
+    /** Looks up profile pictures for [names] we don't know yet. SyncPlay only gives user names. */
+    private fun loadUserImages(names: List<String>) {
+        if (names.all { it in _userImages.value }) return
+        scope.launch {
+            try {
+                val users =
+                    try {
+                        // Lists all users, only allowed for administrators
+                        jellyfinApi.userApi.getUsers().content
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        jellyfinApi.userApi.getPublicUsers().content +
+                            jellyfinApi.userApi.getCurrentUser().content
+                    }
+                _userImages.value =
+                    users
+                        .filter { it.name != null && it.primaryImageTag != null }
+                        .associate {
+                            it.name!! to
+                                api.createUrl(
+                                    "/Users/${it.id}/Images/Primary",
+                                    queryParameters = mapOf("tag" to it.primaryImageTag),
+                                )
+                        }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e)
+            }
+        }
+    }
+
     private fun onGroupUpdate(update: GroupUpdate) {
         Timber.tag(TAG).d("Group update: $update")
         if (groupId == null && isMemberUpdate(update)) {
@@ -268,8 +302,10 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                         groupState = update.data.state,
                     )
                 showMessage(R.string.syncplay_joined_group, update.data.groupName)
+                loadUserImages(update.data.participants)
             }
             is SyncPlayUserJoinedUpdate -> {
+                loadUserImages(listOf(update.data))
                 _state.update { it?.copy(participants = it.participants + update.data) }
                 showMessage(R.string.syncplay_user_joined, update.data)
             }
@@ -320,6 +356,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                     groupState = group.state,
                 )
             showMessage(R.string.syncplay_joined_group, group.groupName)
+            loadUserImages(group.participants)
             startTimeSync()
         }
     }

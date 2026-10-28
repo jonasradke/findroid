@@ -23,12 +23,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import dev.jdtech.jellyfin.core.R as CoreR
 import dev.jdtech.jellyfin.player.local.R as PlayerLocalR
 import dev.jdtech.jellyfin.player.local.domain.SyncPlayManager.SyncPlayState
@@ -46,6 +48,7 @@ import org.jellyfin.sdk.model.api.GroupStateType
  * @param groups groups to join, null while they are still loading
  * @param isBusy shows a progress indicator instead of the content, e.g. while joining
  * @param onCreate creates a new group, the button is hidden when null
+ * @param userImages profile picture URLs by user name
  */
 @Composable
 fun SyncPlayDialog(
@@ -57,6 +60,7 @@ fun SyncPlayDialog(
     isBusy: Boolean = false,
     onCreate: (() -> Unit)? = null,
     @StringRes emptyMessage: Int = PlayerLocalR.string.syncplay_no_groups,
+    userImages: Map<String, String> = emptyMap(),
 ) {
     BaseDialog(
         title = state?.groupName ?: stringResource(PlayerLocalR.string.syncplay),
@@ -105,6 +109,7 @@ fun SyncPlayDialog(
                     state.participants.forEach { participant ->
                         SyncPlayRow(
                             icon = CoreR.drawable.ic_user,
+                            imageUrl = userImages[participant],
                             title = participant,
                             subtitle = null,
                             onClick = null,
@@ -152,7 +157,13 @@ private fun Loading() {
 }
 
 @Composable
-private fun SyncPlayRow(icon: Int, title: String, subtitle: String?, onClick: (() -> Unit)?) {
+private fun SyncPlayRow(
+    icon: Int,
+    title: String,
+    subtitle: String?,
+    onClick: (() -> Unit)?,
+    imageUrl: String? = null,
+) {
     Row(
         modifier =
             Modifier.fillMaxWidth()
@@ -177,6 +188,14 @@ private fun SyncPlayRow(icon: Int, title: String, subtitle: String?, onClick: ((
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.size(20.dp),
             )
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
         }
         Column {
             Text(

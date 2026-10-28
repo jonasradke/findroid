@@ -27,6 +27,7 @@ constructor(
 ) : ViewModel() {
     val state = manager.state
     val pendingOpen = manager.pendingOpen
+    val userImages = manager.userImages
 
     private val _groups = MutableStateFlow<List<GroupInfoDto>?>(null)
     val groups = _groups.asStateFlow()

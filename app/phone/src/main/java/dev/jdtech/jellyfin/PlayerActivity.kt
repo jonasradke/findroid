@@ -422,6 +422,7 @@ class PlayerActivity : BasePlayerActivity() {
 
         // Keep the list of groups fresh while the dialog is open. The last list is kept between
         // openings so the dialog shows it right away.
+        val userImages by viewModel.syncPlayManager.userImages.collectAsStateWithLifecycle()
         LaunchedEffect(state == null) {
             while (state == null) {
                 try {
@@ -457,6 +458,7 @@ class PlayerActivity : BasePlayerActivity() {
                 isJoining = true
                 viewModel.syncPlayManager.createGroup()
             },
+            userImages = userImages,
         )
     }
 

@@ -69,6 +69,7 @@ fun HomeScreen(
 
     if (showSyncPlayDialog) {
         val groups by syncPlayViewModel.groups.collectAsStateWithLifecycle()
+        val userImages by syncPlayViewModel.userImages.collectAsStateWithLifecycle()
         // Keep the list of groups fresh while the dialog is open and we are not in a group
         LaunchedEffect(syncPlayState == null) {
             while (syncPlayState == null) {
@@ -84,6 +85,7 @@ fun HomeScreen(
             onDismiss = { showSyncPlayDialog = false },
             onCreate = { syncPlayViewModel.createGroup() },
             emptyMessage = PlayerLocalR.string.syncplay_no_groups_home,
+            userImages = userImages,
         )
     }
 
