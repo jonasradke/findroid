@@ -1,5 +1,6 @@
 package dev.jdtech.jellyfin.presentation.components
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +56,7 @@ fun SyncPlayDialog(
     onDismiss: () -> Unit,
     isBusy: Boolean = false,
     onCreate: (() -> Unit)? = null,
+    @StringRes emptyMessage: Int = PlayerLocalR.string.syncplay_no_groups,
 ) {
     BaseDialog(
         title = state?.groupName ?: stringResource(PlayerLocalR.string.syncplay),
@@ -119,7 +121,7 @@ fun SyncPlayDialog(
                 }
                 groups.isNullOrEmpty() ->
                     Text(
-                        text = stringResource(PlayerLocalR.string.syncplay_no_groups),
+                        text = stringResource(emptyMessage),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(contentPadding),

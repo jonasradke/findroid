@@ -26,6 +26,7 @@
     <string name="episode_watched_indicator">Episode watched indicator</string>
     <string name="downloaded_indicator">Downloaded indicator</string>
     <string name="downloaded">Downloaded</string>
+    <string name="watch_together">Watch together</string>
     <string name="episode_name">%1$d. %2$s</string>
     <string name="episode_name_with_end">%1$d-%2$d. %3$s</string>
     <string name="episode_name_extended">S%1$d:E%2$d - %3$s</string>

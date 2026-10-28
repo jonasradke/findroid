@@ -405,6 +405,7 @@ class PlayerActivity : BasePlayerActivity() {
             mediaSourceId = mediaSourceId,
             startFromBeginning = startFromBeginning,
             syncPlayGroupId = intent.extras!!.getString("syncPlayGroupId")?.let(UUID::fromString),
+            syncPlayCreateGroup = intent.extras!!.getBoolean("syncPlayCreateGroup"),
         )
         hideSystemUI()
     }

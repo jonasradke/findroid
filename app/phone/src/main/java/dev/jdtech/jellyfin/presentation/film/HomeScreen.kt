@@ -42,6 +42,7 @@ import dev.jdtech.jellyfin.film.presentation.home.HomeViewModel
 import dev.jdtech.jellyfin.models.FindroidCollection
 import dev.jdtech.jellyfin.models.FindroidEpisode
 import dev.jdtech.jellyfin.models.FindroidItem
+import dev.jdtech.jellyfin.player.local.R as PlayerLocalR
 import dev.jdtech.jellyfin.presentation.components.ErrorDialog
 import dev.jdtech.jellyfin.presentation.components.SyncPlayDialog
 import dev.jdtech.jellyfin.presentation.film.components.HomeCarousel
@@ -109,6 +110,7 @@ fun HomeScreen(
             onLeave = {},
             onDismiss = { showSyncPlayDialog = false },
             isBusy = isJoining,
+            emptyMessage = PlayerLocalR.string.syncplay_no_groups_home,
         )
     }
 

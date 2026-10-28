@@ -107,6 +107,7 @@ fun MovieScreen(
                     intent.putExtra("itemKind", BaseItemKind.MOVIE.serialName)
                     intent.putExtra("mediaSourceId", action.mediaSourceId)
                     intent.putExtra("startFromBeginning", action.startFromBeginning)
+                    intent.putExtra("syncPlayCreateGroup", action.watchTogether)
                     context.startActivity(intent)
                 }
                 is MovieAction.PlayTrailer -> {
@@ -250,6 +251,11 @@ private fun MovieScreenLayout(
                         },
                         onDownloadDeleteClick = {
                             onDownloaderAction(DownloaderAction.DeleteDownload(movie))
+                        },
+                        onWatchTogetherClick = { mediaSourceId ->
+                            onAction(
+                                MovieAction.Play(mediaSourceId = mediaSourceId, watchTogether = true)
+                            )
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )

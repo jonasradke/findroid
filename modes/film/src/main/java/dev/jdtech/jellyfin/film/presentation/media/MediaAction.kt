@@ -14,4 +14,5 @@ enum class MediaActionKind {
     NONE,
     PLAY,
     DOWNLOAD,
+    WATCH_TOGETHER,
 }

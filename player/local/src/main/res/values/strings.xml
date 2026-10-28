@@ -37,6 +37,7 @@
     <string name="syncplay_waiting">Waiting for others…</string>
     <string name="syncplay_no_groups">No groups yet. Start one and others can join from Findroid or the web.</string>
     <string name="syncplay_watching">Watching together</string>
+    <string name="syncplay_no_groups_home">No groups yet. To start one, open a movie or episode and tap the Watch together button (the people icon).</string>
     <string name="syncplay_close">Close</string>
     <string name="syncplay_state_playing">Playing</string>
     <string name="syncplay_state_paused">Paused</string>

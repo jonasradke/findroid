@@ -195,6 +195,7 @@ constructor(
         mediaSourceId: String? = null,
         startFromBeginning: Boolean,
         syncPlayGroupId: UUID? = null,
+        syncPlayCreateGroup: Boolean = false,
     ) {
         player.addListener(this)
 
@@ -243,6 +244,8 @@ constructor(
 
             // Opened from a SyncPlay group, join it now that the group's item is loaded
             syncPlayGroupId?.let { syncPlay.joinGroup(it) }
+            // Opened with "Watch together", start a group for this item
+            if (syncPlayCreateGroup) syncPlay.createGroup()
         }
     }
 

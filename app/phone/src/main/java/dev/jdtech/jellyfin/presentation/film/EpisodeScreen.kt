@@ -111,6 +111,7 @@ fun EpisodeScreen(
                     intent.putExtra("itemKind", BaseItemKind.EPISODE.serialName)
                     intent.putExtra("mediaSourceId", action.mediaSourceId)
                     intent.putExtra("startFromBeginning", action.startFromBeginning)
+                    intent.putExtra("syncPlayCreateGroup", action.watchTogether)
                     context.startActivity(intent)
                 }
                 is EpisodeAction.OnBackClick -> navigateBack()
@@ -253,6 +254,14 @@ private fun EpisodeScreenLayout(
                         },
                         onDownloadDeleteClick = {
                             onDownloaderAction(DownloaderAction.DeleteDownload(episode))
+                        },
+                        onWatchTogetherClick = { mediaSourceId ->
+                            onAction(
+                                EpisodeAction.Play(
+                                    mediaSourceId = mediaSourceId,
+                                    watchTogether = true,
+                                )
+                            )
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )

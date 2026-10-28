@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
@@ -53,6 +54,7 @@ fun ItemButtonsBar(
     modifier: Modifier = Modifier,
     downloaderState: DownloaderState? = null,
     canPlay: Boolean = true,
+    onWatchTogetherClick: ((mediaSourceId: String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val windowSizeClass = currentWindowAdaptiveInfo().windowSizeClass
@@ -148,6 +150,19 @@ fun ItemButtonsBar(
                                 contentDescription = null,
                             )
                         }
+                    }
+                }
+                if (onWatchTogetherClick != null && item.canPlay && canPlay) {
+                    FilledTonalIconButton(
+                        onClick = {
+                            mediaActionKind = MediaActionKind.WATCH_TOGETHER
+                            showMediaSourceSelectorDialog = true
+                        }
+                    ) {
+                        Icon(
+                            painter = painterResource(CoreR.drawable.ic_users),
+                            contentDescription = stringResource(CoreR.string.watch_together),
+                        )
                     }
                 }
                 trailerUri?.let { uri ->
@@ -293,6 +308,9 @@ fun ItemButtonsBar(
                 mediaActionKind = MediaActionKind.NONE
             } else if (mediaActionKind == MediaActionKind.DOWNLOAD) {
                 onDownloadClick(Pair(selectedStorageIndex, selectedMediaSourceId))
+                mediaActionKind = MediaActionKind.NONE
+            } else if (mediaActionKind == MediaActionKind.WATCH_TOGETHER) {
+                onWatchTogetherClick?.invoke(selectedMediaSourceId)
                 mediaActionKind = MediaActionKind.NONE
             }
         }
