@@ -22,9 +22,9 @@ import org.jellyfin.sdk.api.client.extensions.libraryApi
 import timber.log.Timber
 
 /**
- * Plays an item's theme song quietly in the background while its page is open, like the web
- * client. The song keeps playing when moving to a page with the same song, e.g. from a show to
- * one of its seasons, and fades out when leaving.
+ * Plays an item's theme song quietly in the background while its page is open, like the web client.
+ * The song keeps playing when moving to a page with the same song, e.g. from a show to one of its
+ * seasons, and fades out when leaving.
  */
 @Singleton
 class ThemeSongPlayer

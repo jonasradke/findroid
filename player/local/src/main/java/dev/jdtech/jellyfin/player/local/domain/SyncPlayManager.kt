@@ -29,7 +29,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jellyfin.sdk.api.client.HttpMethod
 import org.jellyfin.sdk.api.client.extensions.syncPlayApi
-import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.GroupInfoDto
 import org.jellyfin.sdk.model.api.GroupStateType
@@ -197,7 +196,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
      */
     suspend fun isPlayableVideo(itemId: UUID): Boolean =
         try {
-            api.userLibraryApi.getItem(itemId).content.type in
+            jellyfinApi.libraryApi.getItem(itemId, jellyfinApi.userId).content.type in
                 setOf(BaseItemKind.MOVIE, BaseItemKind.EPISODE)
         } catch (e: CancellationException) {
             throw e
