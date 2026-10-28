@@ -88,7 +88,9 @@ private fun VersionItem(mediaSource: FindroidSource, onClick: () -> Unit) {
                 VideoMetadataBarItem(text = stream.codec.audioCodecLabel() + channels)
             }
             if (mediaSource.size > 0) {
-                VideoMetadataBarItem(text = Formatter.formatShortFileSize(context, mediaSource.size))
+                VideoMetadataBarItem(
+                    text = Formatter.formatShortFileSize(context, mediaSource.size)
+                )
             }
             if (mediaSource.type == FindroidSourceType.LOCAL) {
                 VideoMetadataBarItem(
