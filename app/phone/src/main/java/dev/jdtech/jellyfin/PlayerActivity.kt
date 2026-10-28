@@ -24,6 +24,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.Space
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
@@ -39,9 +40,11 @@ import androidx.media3.ui.PlayerControlView
 import androidx.media3.ui.PlayerView
 import dagger.hilt.android.AndroidEntryPoint
 import dev.jdtech.jellyfin.databinding.ActivityPlayerBinding
+import dev.jdtech.jellyfin.player.local.R as PlayerLocalR
 import dev.jdtech.jellyfin.player.local.presentation.PlayerEvents
 import dev.jdtech.jellyfin.player.local.presentation.PlayerViewModel
 import dev.jdtech.jellyfin.presentation.player.SpeedSelectionDialogFragment
+import dev.jdtech.jellyfin.presentation.player.SyncPlayDialogFragment
 import dev.jdtech.jellyfin.presentation.player.TrackSelectionDialogFragment
 import dev.jdtech.jellyfin.settings.domain.AppPreferences
 import dev.jdtech.jellyfin.utils.PlayerGestureHelper
@@ -165,6 +168,7 @@ class PlayerActivity : BasePlayerActivity() {
         val audioButton = binding.playerView.findViewById<ImageButton>(R.id.btn_audio_track)
         val subtitleButton = binding.playerView.findViewById<ImageButton>(R.id.btn_subtitle)
         val speedButton = binding.playerView.findViewById<ImageButton>(R.id.btn_speed)
+        val syncPlayButton = binding.playerView.findViewById<ImageButton>(R.id.btn_syncplay)
         skipSegmentButton = binding.playerView.findViewById(R.id.btn_skip_segment)
         val pipButton = binding.playerView.findViewById<ImageButton>(R.id.btn_pip)
         val lockButton = binding.playerView.findViewById<ImageButton>(R.id.btn_lockview)
@@ -340,6 +344,31 @@ class PlayerActivity : BasePlayerActivity() {
         speedButton.setOnClickListener {
             SpeedSelectionDialogFragment(viewModel)
                 .show(supportFragmentManager, "speedselectiondialog")
+        }
+
+        syncPlayButton.setOnClickListener {
+            lifecycleScope.launch {
+                // Groups to join are only needed when not in a group yet
+                val groups =
+                    if (viewModel.syncPlay.groupName.value == null) {
+                        try {
+                            viewModel.syncPlay.getGroups()
+                        } catch (e: Exception) {
+                            Timber.e(e)
+                            Toast.makeText(
+                                    this@PlayerActivity,
+                                    PlayerLocalR.string.syncplay_request_failed,
+                                    Toast.LENGTH_SHORT,
+                                )
+                                .show()
+                            return@launch
+                        }
+                    } else {
+                        emptyList()
+                    }
+                SyncPlayDialogFragment(viewModel, groups)
+                    .show(supportFragmentManager, "syncplaydialog")
+            }
         }
 
         pipButton.setOnClickListener { pictureInPicture() }

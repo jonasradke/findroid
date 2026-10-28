@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.jdtech.jellyfin.api.JellyfinApi
 import dev.jdtech.jellyfin.models.FindroidSegment
 import dev.jdtech.jellyfin.models.FindroidSegmentType
 import dev.jdtech.jellyfin.player.core.domain.models.PlayerChapter
@@ -26,6 +27,7 @@ import dev.jdtech.jellyfin.player.core.domain.models.Trickplay
 import dev.jdtech.jellyfin.player.local.R
 import dev.jdtech.jellyfin.player.local.domain.DolbyVisionFallbackExtractorsFactory
 import dev.jdtech.jellyfin.player.local.domain.PlaylistManager
+import dev.jdtech.jellyfin.player.local.domain.SyncPlayController
 import dev.jdtech.jellyfin.player.local.mpv.MPVPlayer
 import dev.jdtech.jellyfin.repository.JellyfinRepository
 import dev.jdtech.jellyfin.settings.domain.AppPreferences
@@ -56,8 +58,11 @@ constructor(
     private val repository: JellyfinRepository,
     private val appPreferences: AppPreferences,
     private val savedStateHandle: SavedStateHandle,
+    jellyfinApi: JellyfinApi,
 ) : ViewModel(), Player.Listener {
     val player: Player
+
+    val syncPlay: SyncPlayController
 
     private val _uiState =
         MutableStateFlow(
@@ -180,6 +185,8 @@ constructor(
 
                 else -> throw RuntimeException("$playerBackend is not a valid player backend")
             }
+
+        syncPlay = SyncPlayController(application, jellyfinApi, player, viewModelScope)
     }
 
     fun initializePlayer(
@@ -261,6 +268,7 @@ constructor(
 
     @OptIn(DelicateCoroutinesApi::class)
     private fun releasePlayer() {
+        syncPlay.release()
         val mediaId = player.currentMediaItem?.mediaId
         val position = player.currentPosition
         val duration = player.duration
