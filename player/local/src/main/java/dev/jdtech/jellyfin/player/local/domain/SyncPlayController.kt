@@ -255,7 +255,9 @@ class SyncPlayController(
         Timber.tag(SyncPlayManager.TAG).d("User playWhenReady=$playWhenReady")
         if (playWhenReady) {
             val groupPosition = groupPositionMs()
-            if (manager.state.value?.groupState == GroupStateType.PLAYING && groupPosition != null) {
+            if (
+                manager.state.value?.groupState == GroupStateType.PLAYING && groupPosition != null
+            ) {
                 // The group is playing and only we were paused (e.g. a phone call): catch up
                 // locally, the server ignores unpause requests while the group plays
                 seekTo(groupPosition)
