@@ -37,80 +37,77 @@ class SyncPlaySocket(private val api: ApiClient) {
     private val _isConnected = MutableStateFlow(false)
     val isConnected = _isConnected.asStateFlow()
 
-    fun messages(): Flow<OutboundWebSocketMessage> =
-        callbackFlow {
-                val accessToken = checkNotNull(api.accessToken) { "Not logged in" }
-                val request =
-                    Request.Builder()
-                        .url(api.createUrl("/socket"))
-                        .header(
-                            "Authorization",
-                            AuthorizationHeaderBuilder.buildHeader(
-                                clientName = api.clientInfo.name,
-                                clientVersion = api.clientInfo.version,
-                                deviceId = api.deviceInfo.id,
-                                deviceName = api.deviceInfo.name,
-                                accessToken = accessToken,
-                            ),
-                        )
-                        .build()
+    fun messages(): Flow<OutboundWebSocketMessage> = callbackFlow {
+        val accessToken = checkNotNull(api.accessToken) { "Not logged in" }
+        val request =
+            Request.Builder()
+                .url(api.createUrl("/socket"))
+                .header(
+                    "Authorization",
+                    AuthorizationHeaderBuilder.buildHeader(
+                        clientName = api.clientInfo.name,
+                        clientVersion = api.clientInfo.version,
+                        deviceId = api.deviceInfo.id,
+                        deviceName = api.deviceInfo.name,
+                        accessToken = accessToken,
+                    ),
+                )
+                .build()
 
-                var keepAliveJob: Job? = null
-                val listener =
-                    object : WebSocketListener() {
-                        override fun onOpen(webSocket: WebSocket, response: Response) {
-                            _isConnected.value = true
+        var keepAliveJob: Job? = null
+        val listener =
+            object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    _isConnected.value = true
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    val message =
+                        try {
+                            ApiSerializer.decodeSocketMessage(text)
+                        } catch (e: Exception) {
+                            Timber.tag(SyncPlayManager.TAG).w(e, "Unknown message")
+                            return
                         }
-
-                        override fun onMessage(webSocket: WebSocket, text: String) {
-                            val message =
-                                try {
-                                    ApiSerializer.decodeSocketMessage(text)
-                                } catch (e: Exception) {
-                                    Timber.tag(SyncPlayManager.TAG).w(e, "Unknown message")
-                                    return
-                                }
-                            if (message is ForceKeepAliveMessage) {
-                                // The server drops the socket without a keep alive within this time
-                                val intervalMs = message.data * 1_000L / 2
-                                keepAliveJob?.cancel()
-                                keepAliveJob = launch {
-                                    while (isActive) {
-                                        webSocket.send(
-                                            ApiSerializer.encodeSocketMessage(
-                                                InboundKeepAliveMessage()
-                                            )
-                                        )
-                                        delay(intervalMs)
-                                    }
-                                }
+                    if (message is ForceKeepAliveMessage) {
+                        // The server drops the socket without a keep alive within this time
+                        val intervalMs = message.data * 1_000L / 2
+                        keepAliveJob?.cancel()
+                        keepAliveJob = launch {
+                            while (isActive) {
+                                webSocket.send(
+                                    ApiSerializer.encodeSocketMessage(InboundKeepAliveMessage())
+                                )
+                                delay(intervalMs)
                             }
-                            trySend(message)
-                        }
-
-                        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                            close(IllegalStateException("Socket closed: $code $reason"))
-                        }
-
-                        override fun onFailure(
-                            webSocket: WebSocket,
-                            t: Throwable,
-                            response: Response?,
-                        ) {
-                            close(t)
                         }
                     }
+                    trySend(message)
+                }
 
-                val webSocket = client.newWebSocket(request, listener)
-                awaitClose {
-                    _isConnected.value = false
-                    webSocket.close(1000, null)
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    close(IllegalStateException("Socket closed: $code $reason"))
+                }
+
+                override fun onFailure(
+                    webSocket: WebSocket,
+                    t: Throwable,
+                    response: Response?,
+                ) {
+                    close(t)
                 }
             }
-            .buffer(Channel.UNLIMITED)
-            .retryWhen { cause, attempt ->
-                Timber.tag(SyncPlayManager.TAG).w(cause, "Socket lost, reconnecting")
-                delay(minOf(1_000L * (attempt + 1), 10_000L))
-                true
-            }
+
+        val webSocket = client.newWebSocket(request, listener)
+        awaitClose {
+            _isConnected.value = false
+            webSocket.close(1000, null)
+        }
+    }
+        .buffer(Channel.UNLIMITED)
+        .retryWhen { cause, attempt ->
+            Timber.tag(SyncPlayManager.TAG).w(cause, "Socket lost, reconnecting")
+            delay(minOf(1_000L * (attempt + 1), 10_000L))
+            true
+        }
 }

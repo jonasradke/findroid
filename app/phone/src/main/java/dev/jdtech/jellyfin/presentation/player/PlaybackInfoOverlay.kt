@@ -169,7 +169,8 @@ private fun playbackInfoRows(
     }
 
     val bufferMs = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0)
-    rows += PlayerLocalR.string.playback_info_buffer to "%.1f s".format(Locale.US, bufferMs / 1000.0)
+    rows +=
+        PlayerLocalR.string.playback_info_buffer to "%.1f s".format(Locale.US, bufferMs / 1000.0)
     stats.bandwidthEstimate?.let {
         rows += PlayerLocalR.string.playback_info_network to formatBitrate(it)
     }
@@ -190,10 +191,16 @@ private fun playbackInfoRows(
 private fun Player.selectedFormat(trackType: Int): Format? =
     currentTracks.groups
         .firstOrNull { it.type == trackType && it.isSelected }
-        ?.let { group -> (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let(group::getTrackFormat) }
+        ?.let { group ->
+            (0 until group.length)
+                .firstOrNull { group.isTrackSelected(it) }
+                ?.let(group::getTrackFormat)
+        }
 
 private fun Format.bitrateOrNull(): String? =
-    listOf(averageBitrate, bitrate, peakBitrate).firstOrNull { it > 0 }?.let { formatBitrate(it.toLong()) }
+    listOf(averageBitrate, bitrate, peakBitrate)
+        .firstOrNull { it > 0 }
+        ?.let { formatBitrate(it.toLong()) }
 
 private fun formatBitrate(bitsPerSecond: Long): String =
     if (bitsPerSecond >= 1_000_000) "%.1f Mbps".format(Locale.US, bitsPerSecond / 1_000_000.0)
