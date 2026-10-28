@@ -374,8 +374,8 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                             requestUnpause()
                         }
                         // Someone else started or stopped playback in the meantime
-                        groupState == GroupStateType.PLAYING ||
-                            groupState == GroupStateType.IDLE -> resumeAfterSeek = false
+                        groupState == GroupStateType.PLAYING || groupState == GroupStateType.IDLE ->
+                            resumeAfterSeek = false
                     }
                 }
             }
