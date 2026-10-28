@@ -231,8 +231,10 @@ private fun dynamicRange(format: Format, displaySupportsDolbyVision: Boolean): S
 
 @Suppress("DEPRECATION") // Display.Mode.supportedHdrTypes needs API 34
 private fun View.displaySupportsDolbyVision(): Boolean =
-    display?.hdrCapabilities?.supportedHdrTypes?.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION) ==
-        true
+    display
+        ?.hdrCapabilities
+        ?.supportedHdrTypes
+        ?.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION) == true
 
 private fun channelLayout(channels: Int): String? =
     when (channels) {
