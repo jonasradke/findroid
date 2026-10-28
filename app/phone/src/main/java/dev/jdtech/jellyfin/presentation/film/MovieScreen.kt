@@ -254,7 +254,10 @@ private fun MovieScreenLayout(
                         },
                         onWatchTogetherClick = { mediaSourceId ->
                             onAction(
-                                MovieAction.Play(mediaSourceId = mediaSourceId, watchTogether = true)
+                                MovieAction.Play(
+                                    mediaSourceId = mediaSourceId,
+                                    watchTogether = true,
+                                )
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
