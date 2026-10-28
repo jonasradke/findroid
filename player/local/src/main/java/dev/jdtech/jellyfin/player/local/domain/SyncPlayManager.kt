@@ -306,11 +306,17 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
             }
             is SyncPlayUserJoinedUpdate -> {
                 loadUserImages(listOf(update.data))
-                _state.update { it?.copy(participants = it.participants + update.data) }
+                // The server lists users, not devices, so a user joining on a second device is
+                // already in the list
+                _state.update {
+                    if (it == null || update.data in it.participants) it
+                    else it.copy(participants = it.participants + update.data)
+                }
                 showMessage(R.string.syncplay_user_joined, update.data)
             }
             is SyncPlayUserLeftUpdate -> {
-                _state.update { it?.copy(participants = it.participants - update.data) }
+                // The user may still be in the group on another device, ask the server
+                refreshParticipants(update.groupId)
                 showMessage(R.string.syncplay_user_left, update.data)
             }
             is SyncPlayStateUpdate -> {
@@ -332,6 +338,13 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                 leaveGroup()
             }
             else -> Unit
+        }
+    }
+
+    private fun refreshParticipants(id: UUID) {
+        launchRequest {
+            val participants = api.syncPlayApi.syncPlayGetGroup(id).content.participants
+            if (groupId == id) _state.update { it?.copy(participants = participants) }
         }
     }
 
