@@ -78,7 +78,6 @@ fun ItemButtonsBar(
     var showMediaSourceSelectorDialog by remember { mutableStateOf(false) }
     var hasMultipleMediaSources by remember { mutableStateOf(false) }
     var selectedMediaSourceId by remember { mutableStateOf("") }
-    val mediaSources = remember { mutableListOf<Pair<String, String>>() }
 
     var mediaActionKind by remember { mutableStateOf(MediaActionKind.NONE) }
     var mediaStartFromBeginning by remember { mutableStateOf(false) }
@@ -229,10 +228,6 @@ fun ItemButtonsBar(
         }
         if (item.sources.size > 1) {
             hasMultipleMediaSources = true
-            for (source in item.sources) {
-                mediaSources.remove(Pair(source.id, source.name))
-                mediaSources.add(Pair(source.id, source.name))
-            }
         }
         if (storageSelectionDialogOpen) {
             val locations = remember {
@@ -278,7 +273,7 @@ fun ItemButtonsBar(
         if (showMediaSourceSelectorDialog) {
             if (hasMultipleMediaSources) {
                 VersionSelectionDialog(
-                    mediaSources = mediaSources,
+                    mediaSources = item.sources,
                     onSelect = { mediaSourceId ->
                         selectedMediaSourceId = mediaSourceId
                         processMedaiAction = true

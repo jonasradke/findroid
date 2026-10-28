@@ -5,6 +5,7 @@ import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Rect
@@ -38,6 +39,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerControlView
 import androidx.media3.ui.PlayerView
+import com.google.android.material.color.MaterialColors
 import dagger.hilt.android.AndroidEntryPoint
 import dev.jdtech.jellyfin.databinding.ActivityPlayerBinding
 import dev.jdtech.jellyfin.player.local.R as PlayerLocalR
@@ -346,11 +348,31 @@ class PlayerActivity : BasePlayerActivity() {
                 .show(supportFragmentManager, "speedselectiondialog")
         }
 
+        // Highlight the SyncPlay button while in a group and show when the group waits for someone
+        val syncPlayInactiveTint = syncPlayButton.imageTintList
+        val syncPlayActiveTint =
+            ColorStateList.valueOf(
+                MaterialColors.getColor(
+                    syncPlayButton,
+                    androidx.appcompat.R.attr.colorPrimary,
+                    Color.WHITE,
+                )
+            )
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.syncPlay.state.collect { state ->
+                    syncPlayButton.imageTintList =
+                        if (state != null) syncPlayActiveTint else syncPlayInactiveTint
+                    binding.syncplayWaitingLayout.isVisible = state?.isWaiting == true
+                }
+            }
+        }
+
         syncPlayButton.setOnClickListener {
             lifecycleScope.launch {
                 // Groups to join are only needed when not in a group yet
                 val groups =
-                    if (viewModel.syncPlay.groupName.value == null) {
+                    if (viewModel.syncPlay.state.value == null) {
                         try {
                             viewModel.syncPlay.getGroups()
                         } catch (e: Exception) {

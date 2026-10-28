@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.jellyfin.sdk.api.client.extensions.syncPlayApi
@@ -47,6 +48,7 @@ import org.jellyfin.sdk.model.api.SyncPlayGroupUpdateMessage
 import org.jellyfin.sdk.model.api.SyncPlayLibraryAccessDeniedUpdate
 import org.jellyfin.sdk.model.api.SyncPlayNotInGroupUpdate
 import org.jellyfin.sdk.model.api.SyncPlayPlayQueueUpdate
+import org.jellyfin.sdk.model.api.SyncPlayStateUpdate
 import org.jellyfin.sdk.model.api.SyncPlayUserJoinedUpdate
 import org.jellyfin.sdk.model.api.SyncPlayUserLeftUpdate
 import timber.log.Timber
@@ -68,9 +70,9 @@ class SyncPlayController(
 ) : Player.Listener {
     private val api = jellyfinApi.api
 
-    private val _groupName = MutableStateFlow<String?>(null)
-    /** Name of the group we are in, or null when not in a group. */
-    val groupName = _groupName.asStateFlow()
+    private val _state = MutableStateFlow<SyncPlayState?>(null)
+    /** The group we are in, or null when not in a group. */
+    val state = _state.asStateFlow()
 
     private var groupId: UUID? = null
     private var groupItemId: UUID? = null
@@ -202,13 +204,28 @@ class SyncPlayController(
         when (update) {
             is SyncPlayGroupJoinedUpdate -> {
                 groupId = update.groupId
-                _groupName.value = update.data.groupName
+                _state.value =
+                    SyncPlayState(
+                        groupName = update.data.groupName,
+                        participants = update.data.participants,
+                        isWaiting = update.data.state == GroupStateType.WAITING,
+                    )
                 showMessage(R.string.syncplay_joined_group, update.data.groupName)
                 // Nothing is playing in the group yet, share what we are watching
                 if (update.data.state == GroupStateType.IDLE) setQueueToCurrentItem()
             }
-            is SyncPlayUserJoinedUpdate -> showMessage(R.string.syncplay_user_joined, update.data)
-            is SyncPlayUserLeftUpdate -> showMessage(R.string.syncplay_user_left, update.data)
+            is SyncPlayUserJoinedUpdate -> {
+                _state.update { it?.copy(participants = it.participants + update.data) }
+                showMessage(R.string.syncplay_user_joined, update.data)
+            }
+            is SyncPlayUserLeftUpdate -> {
+                _state.update { it?.copy(participants = it.participants - update.data) }
+                showMessage(R.string.syncplay_user_left, update.data)
+            }
+            is SyncPlayStateUpdate -> {
+                val isWaiting = update.data.state == GroupStateType.WAITING
+                _state.update { it?.copy(isWaiting = isWaiting) }
+            }
             is SyncPlayPlayQueueUpdate -> onPlayQueueUpdate(update.data)
             is SyncPlayGroupLeftUpdate,
             is SyncPlayNotInGroupUpdate -> {
@@ -462,7 +479,7 @@ class SyncPlayController(
         waitingForReady = false
         reportedBuffering = false
         ignoreBuffering = false
-        _groupName.value = null
+        _state.value = null
         commandJob?.cancel()
         seekRequestJob?.cancel()
         timeSyncJob?.cancel()
@@ -510,6 +527,12 @@ class SyncPlayController(
         atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     private fun LocalDateTime.toLocalMillis(): Long = toEpochMilli() - timeOffsetMs
+
+    data class SyncPlayState(
+        val groupName: String,
+        val participants: List<String>,
+        val isWaiting: Boolean,
+    )
 
     private data class TimeSample(val offset: Long, val ping: Long)
 

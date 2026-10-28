@@ -159,6 +159,33 @@
             tools:ignore="ContentDescription" />
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/syncplay_waiting_layout"
+        android:layout_width="wrap_content"
+        android:layout_height="40dp"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="112dp"
+        android:background="@drawable/overlay_background"
+        android:clickable="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ProgressBar
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:indeterminateTint="@android:color/white" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="@string/syncplay_waiting"
+            android:textColor="@android:color/white" />
+    </LinearLayout>
+
     <ImageView
         android:id="@+id/image_ffwd_animation_ripple"
         android:layout_width="50dp"
