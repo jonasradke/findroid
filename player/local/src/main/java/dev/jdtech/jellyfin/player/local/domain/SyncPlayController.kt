@@ -50,6 +50,7 @@ class SyncPlayController(
     private val jobs = mutableListOf<Job>()
     private var commandJob: Job? = null
     private var seekRequestJob: Job? = null
+    private var readyJob: Job? = null
 
     private val isFollowingGroup: Boolean
         get() = manager.groupId != null && playlistItemId != null
@@ -69,6 +70,7 @@ class SyncPlayController(
         jobs.forEach { it.cancel() }
         commandJob?.cancel()
         seekRequestJob?.cancel()
+        readyJob?.cancel()
         player.removeListener(this)
         if (manager.playerItemId == currentItemId()) manager.playerItemId = null
     }
@@ -119,6 +121,7 @@ class SyncPlayController(
         queueRequestedFor = null
         lastCommand = null
         commandJob?.cancel()
+        readyJob?.cancel()
         waitingForReady = false
         reportedBuffering = false
     }
@@ -211,9 +214,23 @@ class SyncPlayController(
 
     private fun sendReadyIfLoaded() {
         if (!waitingForReady || player.playbackState != Player.STATE_READY) return
-        waitingForReady = false
-        reportedBuffering = false
-        sendReady()
+        if (readyJob?.isActive == true) return
+        // The player is ready with only a little buffered. Wait for some more so playback doesn't
+        // stall again right after the group starts, which makes everyone wait.
+        readyJob = scope.launch {
+            val startMs = System.currentTimeMillis()
+            while (
+                player.bufferedPosition - player.currentPosition < READY_BUFFER_MS &&
+                    player.bufferedPosition < player.duration &&
+                    System.currentTimeMillis() - startMs < READY_BUFFER_TIMEOUT_MS
+            ) {
+                delay(200)
+            }
+            if (!waitingForReady || player.playbackState != Player.STATE_READY) return@launch
+            waitingForReady = false
+            reportedBuffering = false
+            sendReady()
+        }
     }
 
     private fun sendReady() {
@@ -289,6 +306,10 @@ class SyncPlayController(
         val expected = expectedSeekPositionMs
         expectedSeekPositionMs = null
         if (expected != null && abs(newPosition.positionMs - expected) < SEEK_THRESHOLD_MS) return
+        // Wait here for the group's seek instead of playing ahead, buffering at the new position
+        // is not something the group has to wait for yet
+        ignoreBuffering = true
+        setPlayWhenReady(false)
         val positionTicks = newPosition.positionMs * 10_000
         // Seek gestures produce many seeks, only send where the user ends up
         seekRequestJob?.cancel()
@@ -319,5 +340,7 @@ class SyncPlayController(
 
     companion object {
         private const val SEEK_THRESHOLD_MS = 500L
+        private const val READY_BUFFER_MS = 5_000L
+        private const val READY_BUFFER_TIMEOUT_MS = 10_000L
     }
 }
