@@ -210,7 +210,8 @@ class SyncPlayController(
             is SyncPlayUserJoinedUpdate -> showMessage(R.string.syncplay_user_joined, update.data)
             is SyncPlayUserLeftUpdate -> showMessage(R.string.syncplay_user_left, update.data)
             is SyncPlayPlayQueueUpdate -> onPlayQueueUpdate(update.data)
-            is SyncPlayGroupLeftUpdate, is SyncPlayNotInGroupUpdate -> {
+            is SyncPlayGroupLeftUpdate,
+            is SyncPlayNotInGroupUpdate -> {
                 if (groupId != null) showMessage(R.string.syncplay_left_group)
                 reset()
             }
