@@ -1,5 +1,7 @@
 package dev.jdtech.jellyfin.presentation.player
 
+import android.view.Display
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -140,7 +143,9 @@ private fun playbackInfoRows(
                         else null,
                     )
                     .joinToString(" · ")
-        rows += PlayerLocalR.string.playback_info_dynamic_range to dynamicRange(video)
+        rows +=
+            PlayerLocalR.string.playback_info_dynamic_range to
+                dynamicRange(video, LocalView.current.displaySupportsDolbyVision())
         video.bitrateOrNull()?.let { rows += PlayerLocalR.string.playback_info_bitrate to it }
     }
     stats.videoDecoderName?.let {
@@ -206,14 +211,28 @@ private fun formatBitrate(bitsPerSecond: Long): String =
     if (bitsPerSecond >= 1_000_000) "%.1f Mbps".format(Locale.US, bitsPerSecond / 1_000_000.0)
     else "${bitsPerSecond / 1000} kbps"
 
-private fun dynamicRange(format: Format): String {
-    if (format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION) return "Dolby Vision"
-    return when (format.colorInfo?.colorTransfer) {
-        C.COLOR_TRANSFER_ST2084 -> "HDR10 (PQ)"
-        C.COLOR_TRANSFER_HLG -> "HLG"
-        else -> "SDR"
-    }
+/**
+ * The range shown on screen. Dolby Vision only plays as such on displays that support it, others
+ * play the HDR10 or HLG base layer the stream carries.
+ */
+private fun dynamicRange(format: Format, displaySupportsDolbyVision: Boolean): String {
+    val base =
+        when (format.colorInfo?.colorTransfer) {
+            C.COLOR_TRANSFER_ST2084 -> "HDR10"
+            C.COLOR_TRANSFER_HLG -> "HLG"
+            else -> "SDR"
+        }
+    if (format.sampleMimeType != MimeTypes.VIDEO_DOLBY_VISION) return base
+    // Codecs look like dvhe.08.06, the second part is the profile
+    val profile = format.codecs?.split('.')?.getOrNull(1)?.toIntOrNull()
+    val dolbyVision = if (profile != null) "Dolby Vision $profile" else "Dolby Vision"
+    return if (displaySupportsDolbyVision) dolbyVision else "$base ($dolbyVision base layer)"
 }
+
+@Suppress("DEPRECATION") // Display.Mode.supportedHdrTypes needs API 34
+private fun View.displaySupportsDolbyVision(): Boolean =
+    display?.hdrCapabilities?.supportedHdrTypes?.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION) ==
+        true
 
 private fun channelLayout(channels: Int): String? =
     when (channels) {
