@@ -144,7 +144,11 @@ fun HomeScreen(
 }
 
 /** Opens the title a SyncPlay group is watching, the player joins the group once loaded. */
-private fun startSyncPlayPlayer(context: Context, open: SyncPlayEvent.Open, mediaSourceId: String?) {
+private fun startSyncPlayPlayer(
+    context: Context,
+    open: SyncPlayEvent.Open,
+    mediaSourceId: String?,
+) {
     val itemKind = if (open.item is FindroidEpisode) BaseItemKind.EPISODE else BaseItemKind.MOVIE
     val intent = Intent(context, PlayerActivity::class.java)
     intent.putExtra("itemId", open.item.id.toString())
