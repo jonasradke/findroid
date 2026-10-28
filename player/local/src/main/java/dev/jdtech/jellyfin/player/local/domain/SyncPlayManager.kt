@@ -118,6 +118,10 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
         launchRequest {
             connect()
             api.syncPlayApi.syncPlayJoinGroup(JoinGroupRequestDto(groupId))
+            // Joining a group we are still a member of is a restore, the server sends no joined
+            // update then
+            delay(1_000)
+            if (this.groupId == null) restoreGroup(groupId)
         }
     }
 
@@ -195,6 +199,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                     api.webSocket.subscribe<SyncPlayCommandMessage>().collect { message ->
                         message.data?.let { command ->
                             Timber.tag(TAG).d("Command: $command")
+                            if (groupId == null) restoreGroup(command.groupId)
                             if (command.groupId == groupId) _commands.emit(command)
                         }
                     }
