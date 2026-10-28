@@ -26,6 +26,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.jellyfin.sdk.api.client.extensions.syncPlayApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
+import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.BufferRequestDto
 import org.jellyfin.sdk.model.api.GroupInfoDto
 import org.jellyfin.sdk.model.api.GroupStateType
@@ -169,6 +171,21 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
         val request = BufferRequestDto(serverNow(), positionTicks, isPlaying, playlistItemId)
         launchRequest { api.syncPlayApi.syncPlayBuffering(request) }
     }
+
+    /**
+     * Whether the app can open [itemId] in the player. The web client puts theme songs in the group
+     * when someone opens an item's page, those are not worth leaving the player for.
+     */
+    suspend fun isPlayableVideo(itemId: UUID): Boolean =
+        try {
+            api.userLibraryApi.getItem(itemId).content.type in
+                setOf(BaseItemKind.MOVIE, BaseItemKind.EPISODE)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e)
+            true
+        }
 
     fun consumePendingOpen() {
         _pendingOpen.value = null

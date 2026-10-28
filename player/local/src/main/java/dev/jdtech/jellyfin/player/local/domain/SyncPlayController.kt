@@ -89,9 +89,15 @@ class SyncPlayController(
             startedInGroup && playlistItemId == null -> requestQueue(current)
             // The group moved on to another title
             else -> {
-                Timber.tag(SyncPlayManager.TAG).d("Group moved to ${queue.itemId}, closing")
                 stopFollowing()
-                onGroupChangedTitle()
+                jobs += scope.launch {
+                    if (manager.isPlayableVideo(queue.itemId)) {
+                        Timber.tag(SyncPlayManager.TAG).d("Group moved to ${queue.itemId}, closing")
+                        onGroupChangedTitle()
+                    } else {
+                        Timber.tag(SyncPlayManager.TAG).d("Group moved to ${queue.itemId}, ignoring")
+                    }
+                }
             }
         }
     }
