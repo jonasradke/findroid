@@ -106,8 +106,8 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
 
     private val _isStuck = MutableStateFlow(false)
     /**
-     * The group has been waiting for a while although we are ready, likely for a client that
-     * missed a command. [forceStart] gets it going again.
+     * The group has been waiting for a while although we are ready, likely for a client that missed
+     * a command. [forceStart] gets it going again.
      */
     val isStuck = _isStuck.asStateFlow()
 
@@ -186,9 +186,9 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     }
 
     /**
-     * Starts playback even though the group is still waiting for someone. The server takes a
-     * second unpause while waiting as the signal to stop waiting, the first one only marks that
-     * the group should play once everyone is ready.
+     * Starts playback even though the group is still waiting for someone. The server takes a second
+     * unpause while waiting as the signal to stop waiting, the first one only marks that the group
+     * should play once everyone is ready.
      */
     fun forceStart() {
         Timber.tag(TAG).d("Forcing playback")
@@ -464,8 +464,8 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
 
     /**
      * Watches for a group that keeps waiting although we are ready. Clients sometimes miss the
-     * server's correction after a seek and never report ready, the server then waits for them for
-     * a long time. The group is started anyway when it should play, otherwise [isStuck] offers it.
+     * server's correction after a seek and never report ready, the server then waits for them for a
+     * long time. The group is started anyway when it should play, otherwise [isStuck] offers it.
      */
     private fun onGroupState(groupState: GroupStateType, previousState: GroupStateType?) {
         if (groupState != GroupStateType.WAITING) {
@@ -496,9 +496,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
             api.syncPlayApi.syncPlayJoinGroup(JoinGroupRequestDto(id))
             val group = api.syncPlayApi.syncPlayGetGroup(id).content
             if (groupId != id) return@launchRequest
-            _state.update {
-                it?.copy(participants = group.participants, groupState = group.state)
-            }
+            _state.update { it?.copy(participants = group.participants, groupState = group.state) }
         }
     }
 
