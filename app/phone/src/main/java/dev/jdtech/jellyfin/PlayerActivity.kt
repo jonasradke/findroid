@@ -400,6 +400,14 @@ class PlayerActivity : BasePlayerActivity() {
                 }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.syncPlayManager.isStuck.collect {
+                    binding.syncplayStartAnyway.isVisible = it
+                }
+            }
+        }
+        binding.syncplayStartAnyway.setOnClickListener { viewModel.syncPlayManager.forceStart() }
 
         syncPlayButton.setOnClickListener { showSyncPlayDialog = true }
         binding.playerView.findViewById<ImageButton>(R.id.btn_playback_info).setOnClickListener {

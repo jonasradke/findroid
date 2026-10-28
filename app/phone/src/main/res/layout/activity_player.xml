@@ -184,6 +184,20 @@
             android:layout_marginStart="12dp"
             android:text="@string/syncplay_waiting"
             android:textColor="@android:color/white" />
+
+        <TextView
+            android:id="@+id/syncplay_start_anyway"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:background="?attr/selectableItemBackground"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="8dp"
+            android:text="@string/syncplay_start_anyway"
+            android:textColor="?attr/colorPrimary"
+            android:textStyle="bold"
+            android:visibility="gone"
+            tools:visibility="visible" />
     </LinearLayout>
 
     <ImageView

@@ -72,7 +72,10 @@ class SyncPlayController(
         seekRequestJob?.cancel()
         readyJob?.cancel()
         player.removeListener(this)
-        if (manager.playerItemId == currentItemId()) manager.playerItemId = null
+        if (manager.playerItemId == currentItemId()) {
+            manager.playerItemId = null
+            manager.isLocalReady = true
+        }
     }
 
     private fun onQueue(queue: QueueItem?) {
@@ -120,6 +123,7 @@ class SyncPlayController(
         setPlayWhenReady(false)
         seekTo(positionMs)
         waitingForReady = true
+        manager.isLocalReady = false
         sendReadyIfLoaded()
     }
 
@@ -131,6 +135,7 @@ class SyncPlayController(
         readyJob?.cancel()
         waitingForReady = false
         reportedBuffering = false
+        manager.isLocalReady = true
     }
 
     private fun onCommand(command: SendCommand) {
@@ -182,6 +187,7 @@ class SyncPlayController(
                 setPlayWhenReady(false)
                 positionMs?.let { seekTo(it) }
                 waitingForReady = true
+                manager.isLocalReady = false
                 sendReadyIfLoaded()
             }
             SendCommandType.STOP -> setPlayWhenReady(false)
@@ -297,7 +303,7 @@ class SyncPlayController(
                 // Wait for the group to start playback together
                 expectedPlayWhenReady = false
                 player.pause()
-                manager.requestUnpause()
+                if (manager.isStuck.value) manager.forceStart() else manager.requestUnpause()
             }
         } else {
             manager.requestPause()
@@ -347,7 +353,7 @@ class SyncPlayController(
 
     companion object {
         private const val SEEK_THRESHOLD_MS = 500L
-        private const val READY_BUFFER_MS = 5_000L
-        private const val READY_BUFFER_TIMEOUT_MS = 10_000L
+        private const val READY_BUFFER_MS = 3_000L
+        private const val READY_BUFFER_TIMEOUT_MS = 6_000L
     }
 }

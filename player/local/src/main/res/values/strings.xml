@@ -35,6 +35,7 @@
     <string name="syncplay_library_access_denied">Someone in the group can\'t access this library</string>
     <string name="syncplay_request_failed">SyncPlay request failed</string>
     <string name="syncplay_waiting">Waiting for others…</string>
+    <string name="syncplay_start_anyway">Start anyway</string>
     <string name="syncplay_no_groups">No groups yet. Start one and others can join from Findroid or the web.</string>
     <string name="syncplay_watching">Watching together</string>
     <string name="syncplay_no_groups_home">No groups yet. Tap New group to start one, then play something. Everyone in the group watches it together.</string>

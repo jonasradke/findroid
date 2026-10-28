@@ -24,7 +24,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jellyfin.sdk.api.client.HttpMethod
@@ -101,11 +104,30 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     private var timeOffsetMs = 0L
     private val timeSamples = ArrayDeque<TimeSample>()
 
+    private val _isStuck = MutableStateFlow(false)
+    /**
+     * The group has been waiting for a while although we are ready, likely for a client that
+     * missed a command. [forceStart] gets it going again.
+     */
+    val isStuck = _isStuck.asStateFlow()
+
+    /**
+     * Whether the attached player is ready to play the group's position, set by the
+     * [SyncPlayController]. Without a player there is nothing to wait for here.
+     */
+    var isLocalReady = true
+
     // Resume playback once the group is ready after a seek that paused it, see [requestSeek]
     private var resumeAfterSeek = false
+    // Whether the group played before it started waiting, so it should play again afterwards
+    private var playingBeforeWait = false
+
+    // Playback requests are sent one after another so they reach the server in order
+    private val requestMutex = Mutex()
 
     private var socketJob: Job? = null
     private var timeSyncJob: Job? = null
+    private var waitJob: Job? = null
 
     suspend fun getGroups(): List<GroupInfoDto> {
         // Listen for group updates already, the server may still count us as a member of a group
@@ -155,32 +177,57 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     }
 
     fun requestUnpause() {
-        launchRequest { api.syncPlayApi.syncPlayUnpause() }
+        launchPlaybackRequest { api.syncPlayApi.syncPlayUnpause() }
     }
 
     fun requestPause() {
-        launchRequest { api.syncPlayApi.syncPlayPause() }
+        resumeAfterSeek = false
+        launchPlaybackRequest { api.syncPlayApi.syncPlayPause() }
+    }
+
+    /**
+     * Starts playback even though the group is still waiting for someone. The server takes a
+     * second unpause while waiting as the signal to stop waiting, the first one only marks that
+     * the group should play once everyone is ready.
+     */
+    fun forceStart() {
+        Timber.tag(TAG).d("Forcing playback")
+        resumeAfterSeek = false
+        _isStuck.value = false
+        launchPlaybackRequest {
+            api.syncPlayApi.syncPlayUnpause()
+            if (_state.value?.isWaiting == true) api.syncPlayApi.syncPlayUnpause()
+        }
     }
 
     fun requestSeek(positionTicks: Long) {
         val isPlaying = _state.value?.groupState == GroupStateType.PLAYING
-        launchRequest {
+        if (isPlaying) resumeAfterSeek = true
+        launchPlaybackRequest {
             if (isPlaying) {
                 // The web client doesn't report ready after a seek while the group plays, so the
                 // group waits for it until the server gives up after 30 s. A seek while paused
                 // works, so pause first and resume once everyone is ready.
-                resumeAfterSeek = true
                 api.syncPlayApi.syncPlayPause()
+                // Let the others finish pausing before seeking. The web client otherwise reports
+                // ready for the pause at the old position, the server's correction gets lost and
+                // the group keeps waiting.
+                withTimeoutOrNull(2_000) {
+                    _state.first { it?.groupState == GroupStateType.PAUSED }
+                }
+                delay(SEEK_AFTER_PAUSE_MS)
             }
             api.syncPlayApi.syncPlaySeek(SeekRequestDto(positionTicks))
         }
     }
 
     fun sendReady(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
+        isLocalReady = true
         sendPlaybackReport("/SyncPlay/Ready", positionTicks, isPlaying, playlistItemId)
     }
 
     fun sendBuffering(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
+        isLocalReady = false
         sendPlaybackReport("/SyncPlay/Buffering", positionTicks, isPlaying, playlistItemId)
     }
 
@@ -195,13 +242,19 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
         isPlaying: Boolean,
         playlistItemId: UUID,
     ) {
-        val body = buildJsonObject {
-            put("When", Instant.ofEpochMilli(System.currentTimeMillis() + timeOffsetMs).toString())
-            put("PositionTicks", positionTicks)
-            put("IsPlaying", isPlaying)
-            put("PlaylistItemId", playlistItemId.toString())
+        launchPlaybackRequest(attempts = 3) {
+            // Built right before sending, the server distrusts reports older than 2 s
+            val body = buildJsonObject {
+                put(
+                    "When",
+                    Instant.ofEpochMilli(System.currentTimeMillis() + timeOffsetMs).toString(),
+                )
+                put("PositionTicks", positionTicks)
+                put("IsPlaying", isPlaying)
+                put("PlaylistItemId", playlistItemId.toString())
+            }
+            api.request(HttpMethod.POST, path, requestBody = body)
         }
-        launchRequest { api.request(HttpMethod.POST, path, requestBody = body) }
     }
 
     /**
@@ -236,6 +289,15 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     private fun subscribe() {
         if (socketJob == null) {
             socketJob = scope.launch {
+                launch {
+                    // Updates sent while the socket was down are lost, catch up after reconnecting
+                    var wasConnected = false
+                    socket.isConnected.collect { connected ->
+                        val id = groupId
+                        if (connected && wasConnected && id != null) rejoinGroup(id)
+                        if (connected) wasConnected = true
+                    }
+                }
                 socket.messages().collect { message ->
                     when (message) {
                         is SyncPlayGroupUpdateMessage -> onGroupUpdate(message.data)
@@ -346,6 +408,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                     )
                 showMessage(R.string.syncplay_joined_group, update.data.groupName)
                 loadUserImages(update.data.participants)
+                onGroupState(update.data.state, null)
             }
             is SyncPlayUserJoinedUpdate -> {
                 loadUserImages(listOf(update.data))
@@ -364,7 +427,9 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
             }
             is SyncPlayStateUpdate -> {
                 val groupState = update.data.state
+                val previousState = _state.value?.groupState
                 _state.update { it?.copy(groupState = groupState) }
+                onGroupState(groupState, previousState)
                 if (resumeAfterSeek) {
                     when {
                         // Everyone is ready after our seek, continue playback
@@ -397,6 +462,46 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
         }
     }
 
+    /**
+     * Watches for a group that keeps waiting although we are ready. Clients sometimes miss the
+     * server's correction after a seek and never report ready, the server then waits for them for
+     * a long time. The group is started anyway when it should play, otherwise [isStuck] offers it.
+     */
+    private fun onGroupState(groupState: GroupStateType, previousState: GroupStateType?) {
+        if (groupState != GroupStateType.WAITING) {
+            waitJob?.cancel()
+            waitJob = null
+            _isStuck.value = false
+            return
+        }
+        if (waitJob?.isActive == true) return
+        playingBeforeWait = previousState == GroupStateType.PLAYING
+        waitJob = scope.launch {
+            delay(STUCK_TIMEOUT_MS)
+            // We may be the one the group waits for, that is not stuck
+            while (!isLocalReady) delay(500)
+            Timber.tag(TAG).w("Group still waiting, resume=${resumeAfterSeek || playingBeforeWait}")
+            if (resumeAfterSeek || playingBeforeWait) {
+                forceStart()
+            } else {
+                _isStuck.value = true
+            }
+        }
+    }
+
+    /** Joins [id] again after the socket reconnected, the server then sends the group's state. */
+    private fun rejoinGroup(id: UUID) {
+        Timber.tag(TAG).d("Socket reconnected, rejoining")
+        launchRequest {
+            api.syncPlayApi.syncPlayJoinGroup(JoinGroupRequestDto(id))
+            val group = api.syncPlayApi.syncPlayGetGroup(id).content
+            if (groupId != id) return@launchRequest
+            _state.update {
+                it?.copy(participants = group.participants, groupState = group.state)
+            }
+        }
+    }
+
     private fun refreshParticipants(id: UUID) {
         launchRequest {
             val participants = api.syncPlayApi.syncPlayGetGroup(id).content.participants
@@ -426,6 +531,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
                 )
             showMessage(R.string.syncplay_joined_group, group.groupName)
             loadUserImages(group.participants)
+            onGroupState(group.state, null)
             startTimeSync()
         }
     }
@@ -453,6 +559,10 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     private fun reset() {
         groupId = null
         resumeAfterSeek = false
+        playingBeforeWait = false
+        waitJob?.cancel()
+        waitJob = null
+        _isStuck.value = false
         _state.value = null
         _queue.value = null
         _pendingOpen.value = null
@@ -471,6 +581,29 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
             } catch (e: Exception) {
                 Timber.e(e)
                 showMessage(R.string.syncplay_request_failed)
+            }
+        }
+    }
+
+    /**
+     * Sends a playback request after the ones before it finished, so e.g. a pause and the seek
+     * after it don't overtake each other on a slow connection. Retries [attempts] times when the
+     * request fails.
+     */
+    private fun launchPlaybackRequest(attempts: Int = 1, block: suspend () -> Unit) {
+        launchRequest {
+            requestMutex.withLock {
+                repeat(attempts - 1) {
+                    try {
+                        return@withLock block()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.tag(TAG).w(e, "Request failed, retrying")
+                        delay(500)
+                    }
+                }
+                block()
             }
         }
     }
@@ -506,5 +639,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
 
     companion object {
         const val TAG = "SyncPlay"
+        private const val SEEK_AFTER_PAUSE_MS = 700L
+        private const val STUCK_TIMEOUT_MS = 8_000L
     }
 }
