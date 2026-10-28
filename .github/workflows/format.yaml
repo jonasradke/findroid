@@ -5,10 +5,12 @@ on:
     paths:
       - '**.kt'
       - '**.kts'
+      - '.github/workflows/format.yaml'
   pull_request:
     paths:
       - '**.kt'
       - '**.kts'
+      - '.github/workflows/format.yaml'
 
 jobs:
   format:
