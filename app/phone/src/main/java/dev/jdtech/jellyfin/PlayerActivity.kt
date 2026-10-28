@@ -18,6 +18,7 @@ import android.os.Process
 import android.util.Rational
 import android.view.SurfaceView
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
@@ -25,10 +26,17 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.Space
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.viewModels
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
@@ -42,12 +50,12 @@ import androidx.media3.ui.PlayerView
 import com.google.android.material.color.MaterialColors
 import dagger.hilt.android.AndroidEntryPoint
 import dev.jdtech.jellyfin.databinding.ActivityPlayerBinding
-import dev.jdtech.jellyfin.player.local.R as PlayerLocalR
 import dev.jdtech.jellyfin.player.local.presentation.PlayerEvents
 import dev.jdtech.jellyfin.player.local.presentation.PlayerViewModel
+import dev.jdtech.jellyfin.presentation.components.SyncPlayDialog
 import dev.jdtech.jellyfin.presentation.player.SpeedSelectionDialogFragment
-import dev.jdtech.jellyfin.presentation.player.SyncPlayDialogFragment
 import dev.jdtech.jellyfin.presentation.player.TrackSelectionDialogFragment
+import dev.jdtech.jellyfin.presentation.theme.FindroidTheme
 import dev.jdtech.jellyfin.settings.domain.AppPreferences
 import dev.jdtech.jellyfin.utils.PlayerGestureHelper
 import dev.jdtech.jellyfin.utils.PreviewScrubListener
@@ -55,6 +63,7 @@ import java.util.UUID
 import javax.inject.Inject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jellyfin.sdk.model.api.GroupInfoDto
 import timber.log.Timber
 
 var isControlsLocked: Boolean = false
@@ -66,6 +75,9 @@ class PlayerActivity : BasePlayerActivity() {
 
     lateinit var binding: ActivityPlayerBinding
     private var playerGestureHelper: PlayerGestureHelper? = null
+
+    private var showSyncPlayDialog by mutableStateOf(false)
+    private var syncPlayGroups by mutableStateOf<List<GroupInfoDto>?>(null)
 
     private val hdrListener =
         object : Player.Listener {
@@ -130,6 +142,10 @@ class PlayerActivity : BasePlayerActivity() {
 
         binding = ActivityPlayerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        addContentView(
+            ComposeView(this).apply { setContent { FindroidTheme { SyncPlayDialogHost() } } },
+            ViewGroup.LayoutParams(0, 0),
+        )
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         binding.playerView.player = viewModel.player
@@ -368,30 +384,7 @@ class PlayerActivity : BasePlayerActivity() {
             }
         }
 
-        syncPlayButton.setOnClickListener {
-            lifecycleScope.launch {
-                // Groups to join are only needed when not in a group yet
-                val groups =
-                    if (viewModel.syncPlay.state.value == null) {
-                        try {
-                            viewModel.syncPlay.getGroups()
-                        } catch (e: Exception) {
-                            Timber.e(e)
-                            Toast.makeText(
-                                    this@PlayerActivity,
-                                    PlayerLocalR.string.syncplay_request_failed,
-                                    Toast.LENGTH_SHORT,
-                                )
-                                .show()
-                            return@launch
-                        }
-                    } else {
-                        emptyList()
-                    }
-                SyncPlayDialogFragment(viewModel, groups)
-                    .show(supportFragmentManager, "syncplaydialog")
-            }
-        }
+        syncPlayButton.setOnClickListener { showSyncPlayDialog = true }
 
         pipButton.setOnClickListener { pictureInPicture() }
 
@@ -411,6 +404,7 @@ class PlayerActivity : BasePlayerActivity() {
             itemKind = itemKind ?: "",
             mediaSourceId = mediaSourceId,
             startFromBeginning = startFromBeginning,
+            syncPlayGroupId = intent.extras!!.getString("syncPlayGroupId")?.let(UUID::fromString),
         )
         hideSystemUI()
     }
@@ -418,6 +412,52 @@ class PlayerActivity : BasePlayerActivity() {
     override fun onDestroy() {
         viewModel.player.removeListener(hdrListener)
         super.onDestroy()
+    }
+
+    @Composable
+    private fun SyncPlayDialogHost() {
+        if (!showSyncPlayDialog) return
+        val state by viewModel.syncPlay.state.collectAsStateWithLifecycle()
+        var isJoining by remember { mutableStateOf(false) }
+
+        // Keep the list of groups fresh while the dialog is open. The last list is kept between
+        // openings so the dialog shows it right away.
+        LaunchedEffect(state == null) {
+            while (state == null) {
+                try {
+                    syncPlayGroups = viewModel.syncPlay.getGroups()
+                } catch (e: Exception) {
+                    Timber.e(e)
+                }
+                delay(2_000)
+            }
+        }
+        LaunchedEffect(state, isJoining) {
+            if (state != null) isJoining = false
+            if (isJoining) {
+                delay(10_000)
+                isJoining = false
+            }
+        }
+
+        SyncPlayDialog(
+            state = state,
+            groups = syncPlayGroups,
+            onJoin = { group ->
+                isJoining = true
+                viewModel.syncPlay.joinGroup(group.groupId)
+            },
+            onLeave = { viewModel.syncPlay.leaveGroup() },
+            onDismiss = {
+                showSyncPlayDialog = false
+                hideSystemUI()
+            },
+            isBusy = isJoining,
+            onCreate = {
+                isJoining = true
+                viewModel.syncPlay.createGroup()
+            },
+        )
     }
 
     override fun onNewIntent(intent: Intent) {

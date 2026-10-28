@@ -45,6 +45,7 @@ fun HomeHeader(
     onSearchClick: () -> Unit,
     onUserClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onSyncPlayClick: (() -> Unit)? = null,
 ) {
     val isOfflineMode = LocalOfflineMode.current
 
@@ -123,6 +124,23 @@ fun HomeHeader(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            if (!isOfflineMode && onSyncPlayClick != null) {
+                Surface(
+                    onClick = onSyncPlayClick,
+                    modifier = Modifier.fillMaxHeight().aspectRatio(1f),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    Box {
+                        Icon(
+                            painter = painterResource(CoreR.drawable.ic_users),
+                            contentDescription = null,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
                     }
                 }
             }

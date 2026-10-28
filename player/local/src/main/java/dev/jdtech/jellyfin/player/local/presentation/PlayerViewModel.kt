@@ -194,6 +194,7 @@ constructor(
         itemKind: String,
         mediaSourceId: String? = null,
         startFromBeginning: Boolean,
+        syncPlayGroupId: UUID? = null,
     ) {
         player.addListener(this)
 
@@ -239,6 +240,9 @@ constructor(
             player.setMediaItems(mediaItems, 0, startPosition)
             player.prepare()
             player.play()
+
+            // Opened from a SyncPlay group, join it now that the group's item is loaded
+            syncPlayGroupId?.let { syncPlay.joinGroup(it) }
         }
     }
 
