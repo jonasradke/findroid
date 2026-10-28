@@ -38,6 +38,7 @@ import org.jellyfin.sdk.model.api.NewGroupRequestDto
 import org.jellyfin.sdk.model.api.PingRequestDto
 import org.jellyfin.sdk.model.api.PlayQueueUpdate
 import org.jellyfin.sdk.model.api.PlayRequestDto
+import org.jellyfin.sdk.model.api.PlaybackRequestType
 import org.jellyfin.sdk.model.api.SeekRequestDto
 import org.jellyfin.sdk.model.api.SendCommand
 import org.jellyfin.sdk.model.api.SyncPlayCommandMessage
@@ -100,6 +101,9 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     private var timeOffsetMs = 0L
     private val timeSamples = ArrayDeque<TimeSample>()
 
+    // Resume playback once the group is ready after a seek that paused it, see [requestSeek]
+    private var resumeAfterSeek = false
+
     private var socketJob: Job? = null
     private var timeSyncJob: Job? = null
 
@@ -159,7 +163,17 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
     }
 
     fun requestSeek(positionTicks: Long) {
-        launchRequest { api.syncPlayApi.syncPlaySeek(SeekRequestDto(positionTicks)) }
+        val isPlaying = _state.value?.groupState == GroupStateType.PLAYING
+        launchRequest {
+            if (isPlaying) {
+                // The web client doesn't report ready after a seek while the group plays, so the
+                // group waits for it until the server gives up after 30 s. A seek while paused
+                // works, so pause first and resume once everyone is ready.
+                resumeAfterSeek = true
+                api.syncPlayApi.syncPlayPause()
+            }
+            api.syncPlayApi.syncPlaySeek(SeekRequestDto(positionTicks))
+        }
     }
 
     fun sendReady(positionTicks: Long, isPlaying: Boolean, playlistItemId: UUID) {
@@ -351,6 +365,19 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
             is SyncPlayStateUpdate -> {
                 val groupState = update.data.state
                 _state.update { it?.copy(groupState = groupState) }
+                if (resumeAfterSeek) {
+                    when {
+                        // Everyone is ready after our seek, continue playback
+                        groupState == GroupStateType.PAUSED &&
+                            update.data.reason == PlaybackRequestType.READY -> {
+                            resumeAfterSeek = false
+                            requestUnpause()
+                        }
+                        // Someone else started or stopped playback in the meantime
+                        groupState == GroupStateType.PLAYING ||
+                            groupState == GroupStateType.IDLE -> resumeAfterSeek = false
+                    }
+                }
             }
             is SyncPlayPlayQueueUpdate -> onPlayQueueUpdate(update.data)
             is SyncPlayGroupLeftUpdate,
@@ -425,6 +452,7 @@ constructor(private val application: Application, private val jellyfinApi: Jelly
 
     private fun reset() {
         groupId = null
+        resumeAfterSeek = false
         _state.value = null
         _queue.value = null
         _pendingOpen.value = null
