@@ -26,3 +26,6 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
       - name: Check with ktfmt
         run: ./gradlew ktfmtCheck
+      - name: Show formatting diff
+        if: failure()
+        run: ./gradlew ktfmtFormat && git diff
