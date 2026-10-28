@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewPropertyAnimator
 import android.view.WindowInsets
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
@@ -47,6 +48,17 @@ class PlayerGestureHelper(
      * sides. Useful on wide-screen phones to remove black bars from some movies.
      */
     var isZoomEnabled = false
+
+    /**
+     * Tracks whether the current video is HDR. Like YouTube, the brightness gesture and the
+     * remembered brightness are disabled for HDR video so Android can manage HDR brightness itself.
+     */
+    var isHdrContent = false
+        set(value) {
+            if (field == value) return
+            field = value
+            applyRememberedBrightness()
+        }
 
     /**
      * Tracks a value during a swipe gesture (between multiple onScroll calls). When the gesture
@@ -362,7 +374,7 @@ class PlayerGestureHelper(
                         activity.binding.gestureVolumeImage.setImageLevel(process)
 
                         swipeGestureVolumeOpen = true
-                    } else {
+                    } else if (!isHdrContent) {
                         // Swiping on the left, change brightness
                         val window = activity.window
                         val brightnessRange = BRIGHTNESS_OVERRIDE_OFF..BRIGHTNESS_OVERRIDE_FULL
@@ -568,16 +580,25 @@ class PlayerGestureHelper(
         }
     }
 
+    /** Applies the remembered brightness, or lets the system decide for HDR video. */
+    fun applyRememberedBrightness() {
+        activity.window.attributes =
+            activity.window.attributes.apply {
+                screenBrightness =
+                    if (
+                        !isHdrContent &&
+                            appPreferences.getValue(appPreferences.playerGesturesVB) &&
+                            appPreferences.getValue(appPreferences.playerGesturesBrightnessRemember)
+                    ) {
+                        appPreferences.getValue(appPreferences.playerBrightness)
+                    } else {
+                        BRIGHTNESS_OVERRIDE_NONE
+                    }
+            }
+    }
+
     init {
-        if (
-            appPreferences.getValue(appPreferences.playerGesturesVB) &&
-                appPreferences.getValue(appPreferences.playerGesturesBrightnessRemember)
-        ) {
-            activity.window.attributes =
-                activity.window.attributes.apply {
-                    screenBrightness = appPreferences.getValue(appPreferences.playerBrightness)
-                }
-        }
+        applyRememberedBrightness()
 
         updateZoomMode(appPreferences.getValue(appPreferences.playerGesturesStartMaximized))
 

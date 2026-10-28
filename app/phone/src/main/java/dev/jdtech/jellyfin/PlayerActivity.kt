@@ -30,6 +30,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
+import androidx.media3.common.ColorInfo
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.PlayerControlView
 import androidx.media3.ui.PlayerView
@@ -57,6 +61,23 @@ class PlayerActivity : BasePlayerActivity() {
 
     lateinit var binding: ActivityPlayerBinding
     private var playerGestureHelper: PlayerGestureHelper? = null
+
+    private val hdrListener =
+        object : Player.Listener {
+            override fun onTracksChanged(tracks: Tracks) {
+                playerGestureHelper?.isHdrContent =
+                    tracks.groups.any { group ->
+                        group.type == C.TRACK_TYPE_VIDEO &&
+                            (0 until group.length).any { index ->
+                                group.isTrackSelected(index) &&
+                                    group.getTrackFormat(index).let { format ->
+                                        format.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION ||
+                                            ColorInfo.isTransferHdr(format.colorInfo)
+                                    }
+                            }
+                    }
+            }
+        }
     override val viewModel: PlayerViewModel by viewModels()
     private var previewScrubListener: PreviewScrubListener? = null
     private var wasZoom: Boolean = false
@@ -131,6 +152,8 @@ class PlayerActivity : BasePlayerActivity() {
                     binding.playerView,
                     getSystemService(AUDIO_SERVICE) as AudioManager,
                 )
+            viewModel.player.addListener(hdrListener)
+            hdrListener.onTracksChanged(viewModel.player.currentTracks)
         }
 
         binding.playerView.findViewById<View>(R.id.back_button).setOnClickListener {
@@ -341,6 +364,11 @@ class PlayerActivity : BasePlayerActivity() {
         hideSystemUI()
     }
 
+    override fun onDestroy() {
+        viewModel.player.removeListener(hdrListener)
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -466,16 +494,7 @@ class PlayerActivity : BasePlayerActivity() {
                 playerGestureHelper?.updateZoomMode(wasZoom)
 
                 // Override auto brightness
-                if (
-                    appPreferences.getValue(appPreferences.playerGesturesVB) &&
-                        appPreferences.getValue(appPreferences.playerGesturesBrightnessRemember)
-                ) {
-                    window.attributes =
-                        window.attributes.apply {
-                            screenBrightness =
-                                appPreferences.getValue(appPreferences.playerBrightness)
-                        }
-                }
+                playerGestureHelper?.applyRememberedBrightness()
             }
         }
     }
